@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edumeta.example/schemas/catalog_entries.schema.json",
+  "title": "Catalog Entry Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entry_id",
+    "university_id",
+    "school",
+    "department",
+    "level",
+    "degree_level",
+    "program_name",
+    "discipline_ids",
+    "discipline_labels",
+    "source_id",
+    "source_url",
+    "topics",
+    "search_text",
+    "capture_date",
+    "dataset_version",
+    "status"
+  ],
+  "properties": {
+    "entry_id": { "type": "string", "pattern": "^ent_[a-z0-9_]+$" },
+    "university_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "program_id": { "type": ["string", "null"] },
+    "school": { "type": "string", "minLength": 1 },
+    "department": { "type": "string", "minLength": 1 },
+    "level": { "type": "string", "enum": ["undergraduate", "graduate", "non_degree"] },
+    "degree_level": {
+      "type": "string",
+      "enum": ["SB", "Minor", "SM", "MEng", "MArch", "MCP", "MASc", "MBA", "MBAn", "MFin", "MSMS", "PhD", "ScD", "Certificate", "Other"]
+    },
+    "degree_full_name": { "type": ["string", "null"] },
+    "course_code": { "type": ["string", "null"] },
+    "program_name": { "type": "string", "minLength": 1 },
+    "canonical_program_name": { "type": ["string", "null"] },
+    "aliases": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "discipline_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+    },
+    "discipline_labels": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "source_id": { "type": "string", "pattern": "^src_[a-z0-9_]+$" },
+    "source_url": { "type": "string", "format": "uri" },
+    "topics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "search_text": { "type": "string", "minLength": 1 },
+    "cross_school": { "type": "boolean", "default": false },
+    "cross_school_names": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "raw_section_path": { "type": ["string", "null"] },
+    "capture_date": { "type": "string", "format": "date" },
+    "dataset_version": { "type": "string" },
+    "source_version": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["active", "deprecated", "inactive", "superseded"] }
+  }
+}

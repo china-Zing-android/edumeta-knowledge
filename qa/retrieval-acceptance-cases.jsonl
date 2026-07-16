@@ -1,0 +1,30 @@
+{"case_id":"l1-course-6-3","query":"MIT Course 6-3 本科专业是什么？","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"6-3","program_name_contains":"Computer Science and Engineering"}}
+{"case_id":"l1-course-6-4","query":"MIT Course 6-4 是什么专业？","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"6-4","program_name_contains":"Artificial Intelligence"}}
+{"case_id":"l1-course-14-1","query":"MIT Course 14-1 是什么？","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"14-1","program_name_contains":"Economics"}}
+{"case_id":"l1-course-2","query":"MIT Course 2 本科专业","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"2","program_name_contains":"Mechanical Engineering"}}
+{"case_id":"l1-course-16","query":"MIT Course 16 本科专业","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"16","program_name_contains":"Aerospace Engineering"}}
+{"case_id":"l1-ai","query":"MIT 有哪些 AI 相关本科专业？","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"6-4"}}
+{"case_id":"l1-economics","query":"MIT 有 Economics 本科专业吗？","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"14-1"}}
+{"case_id":"l1-minor-astronomy","query":"MIT Astronomy minor","university_id":"mit","expected_mode":"l1","match_any":{"degree_level":"Minor","program_name_contains":"Astronomy"}}
+{"case_id":"l1-eecs-toefl","query":"MIT EECS PhD TOEFL 最低要求是多少？","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"english_requirement","raw_value_contains":"TOEFL 100","source_url_contains":"electrical-engineering-and-computer-science"}}
+{"case_id":"l1-biology-toefl","query":"MIT Biology PhD TOEFL 要求","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"english_requirement","source_url_contains":"/biology"}}
+{"case_id":"l1-economics-deadline","query":"MIT Economics graduate application deadline","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"deadline","source_url_contains":"/economics"}}
+{"case_id":"l1-linguistics-deadline","query":"MIT linguistics application deadline","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"deadline","source_url_contains":"/linguistics"}}
+{"case_id":"l1-microbiology-fee","query":"MIT microbiology application fee","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"application_fee","source_url_contains":"/microbiology"}}
+{"case_id":"l1-eecs-fee","query":"MIT EECS application fee","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"application_fee","source_url_contains":"electrical-engineering-and-computer-science"}}
+{"case_id":"l1-undergrad-tuition","query":"MIT 本科 2026-2027 学费是多少？","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"tuition","raw_value_contains":"66,720"}}
+{"case_id":"l1-undergrad-ea","query":"MIT 本科 Early Action deadline","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"deadline","raw_value_contains":"November 1"}}
+{"case_id":"l1-undergrad-ra","query":"MIT undergraduate regular action deadline","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"deadline","raw_value_contains":"January 5"}}
+{"case_id":"l1-funding-eecs","query":"MIT EECS PhD funding","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"funding_model","source_url_contains":"electrical-engineering-and-computer-science"}}
+{"case_id":"l1-gre-economics","query":"MIT Economics GRE GMAT policy","university_id":"mit","expected_mode":"l1","match_any":{"fact_type":"gre_gmat_policy","source_url_contains":"/economics"}}
+{"case_id":"l1-explicit-id","query":"ent_mit_undergraduate_sb_6_4_artificial_intelligence_and_decision_making","university_id":"mit","expected_mode":"l1","match_any":{"course_code":"6-4"}}
+{"case_id":"clarify-grad-deadline","query":"MIT 研究生申请 deadline 是什么时候？","university_id":"mit","expected_mode":"clarification","missing_slot":"program_id"}
+{"case_id":"clarify-broad-requirements","query":"MIT 的入学申请有什么要求？","university_id":"mit","expected_mode":"clarification","missing_slot":"program_id_or_entry_id"}
+{"case_id":"clarify-no-school","query":"EECS PhD TOEFL 要求是多少？","expected_mode":"clarification","missing_slot":"university_id"}
+{"case_id":"not-found-school","query":"Unknown University Economics","university_id":"unknown-university","expected_mode":"not_found"}
+{"case_id":"not-found-program","query":"MIT Quantum Basket Weaving 本科专业","university_id":"mit","expected_mode":"not_found"}
+{"case_id":"l2-eecs-background","query":"MIT EECS PhD 是否接受非 CS 背景？","university_id":"mit","expected_mode":"l1_l2","evidence_source_contains":"electrical-engineering-and-computer-science"}
+{"case_id":"l2-economics-requirements","query":"MIT Economics PhD 申请要求有哪些？","university_id":"mit","expected_mode":"l1_l2","evidence_source_contains":"/economics"}
+{"case_id":"l2-biology-background","query":"MIT Biology PhD 是否接受跨专业背景？","university_id":"mit","expected_mode":"l1_l2","evidence_source_contains":"/biology"}
+{"case_id":"l2-microbiology-requirements","query":"MIT Microbiology PhD 申请要求","university_id":"mit","expected_mode":"l1_l2","evidence_source_contains":"/microbiology"}
+{"case_id":"l2-sloan-mba-requirements","query":"MIT Sloan MBA 申请要求有哪些？","university_id":"mit","expected_mode":"l1_l2","evidence_source_contains":"mit-sloan-mba-program"}

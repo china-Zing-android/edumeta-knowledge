@@ -1,0 +1,8 @@
+-- =============================================================================
+-- 003 — RETIRED / superseded by 001_initial_schema.sql
+-- The previous migration added weknora_import_job_id columns to source_registry
+-- and url_manifest. url_manifest has been removed (Plan §3) and source_registry
+-- now carries weknora_import_job_id, weknora_knowledge_base_id and
+-- weknora_knowledge_id directly in 001_initial_schema.sql. This file is
+-- intentionally empty.
+-- =============================================================================

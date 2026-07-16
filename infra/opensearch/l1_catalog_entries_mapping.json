@@ -1,0 +1,36 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    }
+  },
+  "mappings": {
+    "properties": {
+      "entry_id": { "type": "keyword" },
+      "university_id": { "type": "keyword" },
+      "program_id": { "type": "keyword" },
+      "school": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "department": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "level": { "type": "keyword" },
+      "degree_level": { "type": "keyword" },
+      "course_code": { "type": "keyword" },
+      "program_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "aliases": { "type": "keyword" },
+      "discipline_ids": { "type": "keyword" },
+      "discipline_labels": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "university_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "country_code": { "type": "keyword" },
+      "region": { "type": "keyword" },
+      "school_tier": { "type": "keyword" },
+      "is_current": { "type": "boolean" },
+      "source_id": { "type": "keyword" },
+      "source_url": { "type": "keyword" },
+      "topics": { "type": "keyword" },
+      "search_text": { "type": "text" },
+      "capture_date": { "type": "date" },
+      "dataset_version": { "type": "keyword" },
+      "status": { "type": "keyword" }
+    }
+  }
+}

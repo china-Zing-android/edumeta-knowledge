@@ -1,0 +1,9 @@
+{"case_id":"upward-medicine-us","query":"医学专业的院校有哪些？","direction":"upward","filters":{"country_codes":["US"]},"expected_mode":"upward","match_any":{"university_id":"mit"},"matched_program_any":{"program_name_contains":"Health Sciences"},"required_university_ids":["mit"],"forbidden_university_ids":["stanford"]}
+{"case_id":"upward-medicine-phd","query":"哪些院校有医学相关博士项目？","direction":"upward","filters":{"degree_levels":["PhD"]},"expected_mode":"upward","match_any":{"university_id":"mit"},"matched_program_any":{"degree_level":"PhD","program_name_contains":"Health Sciences"}}
+{"case_id":"upward-medicine-country-miss","query":"医学专业的院校有哪些？","direction":"upward","filters":{"country_codes":["CN"]},"expected_mode":"not_found"}
+{"case_id":"range-us-core","query":"美国核心院校有哪些？","direction":"range","filters":{"country_codes":["US"],"school_tiers":["core"]},"expected_mode":"range","match_any":{"university_id":"mit"}}
+{"case_id":"range-country-miss","query":"中国已入库院校有哪些？","direction":"range","filters":{"country_codes":["CN"]},"expected_mode":"not_found"}
+{"case_id":"upward-computer-science","query":"计算机专业的院校有哪些？","direction":"upward","expected_mode":"upward","match_any":{"university_id":"mit"},"matched_program_any":{"program_name_contains":"Computer Science"},"required_university_ids":["mit","stanford"]}
+{"case_id":"upward-economics","query":"经济学专业有哪些已入库院校？","direction":"upward","expected_mode":"upward","match_any":{"university_id":"mit"},"matched_program_any":{"program_name_contains":"Economics"}}
+{"case_id":"range-california","query":"加州已入库院校有哪些？","direction":"range","filters":{"country_codes":["US"],"regions":["California"]},"expected_mode":"range","match_any":{"university_id":"stanford"},"required_university_ids":["stanford"],"forbidden_university_ids":["mit"]}
+{"case_id":"downward-regression","query":"MIT 有 Economics 本科专业吗？","university_id":"mit","direction":"auto","expected_mode":"l1","match_any":{"course_code":"14-1"}}

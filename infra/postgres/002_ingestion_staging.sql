@@ -1,0 +1,11 @@
+-- =============================================================================
+-- 002 — RETIRED / consolidated into 001_initial_schema.sql
+-- Plan §3 Task 2: the old ingestion_runs + jsonl_staging tables are replaced by
+-- the authoritative control-plane schema. ingestion_runs (now with input_hash)
+-- and ingestion_records (replacing jsonl_staging) are defined in
+-- 001_initial_schema.sql. This file is intentionally empty so the migration
+-- sequence remains readable without re-creating the old shape.
+--
+-- Plan §12: no production migration compatibility is required; the local dev
+-- PostgreSQL volume is reset once before applying 001.
+-- =============================================================================

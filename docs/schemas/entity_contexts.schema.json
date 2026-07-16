@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Entity Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "context_id",
+    "entity_type",
+    "entity_id",
+    "university_id",
+    "entry_id",
+    "title",
+    "display_label",
+    "attributes",
+    "highlights",
+    "sample_children",
+    "related_entities",
+    "available_topics",
+    "source_ids",
+    "md_section_paths",
+    "dataset_version",
+    "status"
+  ],
+  "properties": {
+    "context_id": {"type": "string", "minLength": 1},
+    "entity_type": {"enum": ["university", "program"]},
+    "entity_id": {"type": "string", "minLength": 1},
+    "university_id": {"type": "string", "minLength": 1},
+    "entry_id": {"type": ["string", "null"]},
+    "title": {"type": "string", "minLength": 1},
+    "display_label": {"type": "string", "minLength": 1},
+    "attributes": {"type": "object"},
+    "highlights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "label", "value"],
+        "properties": {
+          "kind": {"type": "string"},
+          "label": {"type": "string"},
+          "value": {"type": ["string", "number", "integer", "boolean"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "sample_children": {"type": "array", "items": {"type": "object"}},
+    "related_entities": {"type": "array", "items": {"type": "object"}},
+    "available_topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "availability", "source_ids", "source_count"],
+        "properties": {
+          "topic": {"type": "string", "minLength": 1},
+          "availability": {"enum": ["l1", "weknora"]},
+          "source_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true, "maxItems": 5},
+          "source_count": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "source_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "md_section_paths": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "dataset_version": {"type": "string", "minLength": 1},
+    "status": {"enum": ["active", "inactive", "superseded"]}
+  }
+}

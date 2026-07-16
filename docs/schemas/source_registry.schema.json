@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edumeta.example/schemas/source_registry.schema.json",
+  "title": "Source Registry Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_id",
+    "university_id",
+    "canonical_url",
+    "url_type",
+    "topics",
+    "official_source",
+    "priority",
+    "status",
+    "parser_status",
+    "weknora_import_status",
+    "capture_date",
+    "last_verified",
+    "dataset_version"
+  ],
+  "properties": {
+    "source_id": { "type": "string", "pattern": "^src_[a-z0-9_]+$" },
+    "university_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "program_id": { "type": ["string", "null"] },
+    "entry_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "source_url": { "type": "string", "format": "uri" },
+    "canonical_url": { "type": "string", "format": "uri" },
+    "url_type": {
+      "type": "string",
+      "enum": [
+        "catalog",
+        "degree_chart",
+        "program_admission",
+        "deadline",
+        "tests",
+        "tuition_fee",
+        "funding",
+        "curriculum",
+        "faculty",
+        "faq",
+        "policy",
+        "overview"
+      ]
+    },
+    "topics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "official_source": { "type": "boolean" },
+    "priority": { "type": "integer", "minimum": 1 },
+    "content_hash": { "type": ["string", "null"] },
+    "weknora_content_hash": { "type": ["string", "null"] },
+    "weknora_import_job_id": { "type": ["string", "null"] },
+    "crawl_status": {
+      "type": "string",
+      "enum": ["not_applicable", "pending", "success", "failed", "skipped"]
+    },
+    "parser_status": {
+      "type": "string",
+      "enum": ["pending", "parsed", "partial", "failed", "not_applicable"]
+    },
+    "weknora_import_status": {
+      "type": "string",
+      "enum": ["not_required", "pending", "running", "success", "failed", "skipped"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "deprecated", "inactive", "superseded", "failed"]
+    },
+    "capture_date": { "type": "string", "format": "date" },
+    "last_verified": { "type": "string", "format": "date" },
+    "dataset_version": { "type": "string" },
+    "source_version": { "type": ["string", "null"] },
+    "error_message": { "type": ["string", "null"] }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "settings": {
+    "index": { "number_of_shards": 1, "number_of_replicas": 0 },
+    "analysis": { "normalizer": { "lowercase": { "type": "custom", "filter": ["lowercase"] } } }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "university_id": { "type": "keyword" },
+      "university_name": { "type": "text", "fields": { "keyword": { "type": "keyword", "normalizer": "lowercase" } } },
+      "aliases": { "type": "text", "fields": { "keyword": { "type": "keyword", "normalizer": "lowercase" } } },
+      "country_code": { "type": "keyword" },
+      "region": { "type": "keyword" },
+      "school_tier": { "type": "keyword" },
+      "is_current": { "type": "boolean" },
+      "dataset_version": { "type": "keyword" },
+      "status": { "type": "keyword" }
+    }
+  }
+}

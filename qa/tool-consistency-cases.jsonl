@@ -1,0 +1,12 @@
+{"case_id":"consistency_fact","query":"MIT EECS PhD TOEFL 要求是多少？"}
+{"case_id":"consistency_catalog","query":"MIT 有哪些 AI 相关本科专业？"}
+{"case_id":"consistency_deep","query":"MIT EECS PhD 是否接受非 CS 背景？"}
+{"case_id":"consistency_clarification","query":"MIT CS master 怎么申请？"}
+{"case_id":"consistency_stanford_fact","query":"Stanford Computer Science MS application fee 是多少？"}
+{"case_id":"consistency_stanford_deep","query":"Stanford Computer Science PhD 是否接受非 CS 背景？"}
+{"case_id":"consistency_berkeley_catalog","query":"Berkeley Data Science undergraduate program 有哪些信息？"}
+{"case_id":"consistency_berkeley_fact","query":"Berkeley Computer Science PhD GRE policy 是什么？"}
+{"case_id":"consistency_harvard_fact","query":"Harvard Data Science SM application fee 是多少？"}
+{"case_id":"consistency_harvard_catalog","query":"Harvard Statistics PhD program 有哪些信息？"}
+{"case_id":"consistency_princeton_fact","query":"Princeton Computer Science PhD application fee 是多少？"}
+{"case_id":"consistency_princeton_clarification","query":"Princeton 学费是多少？"}

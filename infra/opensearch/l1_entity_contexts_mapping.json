@@ -1,0 +1,41 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    }
+  },
+  "mappings": {
+    "properties": {
+      "context_id": { "type": "keyword" },
+      "entity_type": { "type": "keyword" },
+      "entity_id": { "type": "keyword" },
+      "university_id": { "type": "keyword" },
+      "entry_id": { "type": "keyword" },
+      "title": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "display_label": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+      "attributes": {
+        "properties": {
+          "course_code": { "type": "keyword" },
+          "program_id": { "type": "keyword" },
+          "degree_level": { "type": "keyword" },
+          "level": { "type": "keyword" },
+          "department": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "school": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "discipline_ids": { "type": "keyword" },
+          "country_code": { "type": "keyword" },
+          "region": { "type": "keyword" }
+        }
+      },
+      "highlights": { "type": "object", "enabled": false },
+      "sample_children": { "type": "object", "enabled": false },
+      "related_entities": { "type": "object", "enabled": false },
+      "available_topics": { "type": "object", "enabled": false },
+      "source_ids": { "type": "keyword" },
+      "md_section_paths": { "type": "keyword" },
+      "dataset_version": { "type": "keyword" },
+      "is_current": { "type": "boolean" },
+      "status": { "type": "keyword" }
+    }
+  }
+}

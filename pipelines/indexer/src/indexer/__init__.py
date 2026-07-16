@@ -1,0 +1,2 @@
+"""OpenSearch indexer package placeholder."""
+

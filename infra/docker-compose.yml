@@ -1,0 +1,125 @@
+services:
+  postgres:
+    image: docker.m.daocloud.io/library/postgres:16
+    environment:
+      POSTGRES_DB: edumeta
+      POSTGRES_USER: edumeta
+      POSTGRES_PASSWORD: edumeta
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edumeta -d edumeta"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "EdumetaDev123!"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  bootstrap:
+    image: edumeta-fast-router:local
+    build:
+      context: ..
+      dockerfile: apps/fast-router/Dockerfile
+      args:
+        PIP_INDEX_URL: ${FAST_ROUTER_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    environment:
+      POSTGRES_DSN: postgresql://edumeta:edumeta@postgres:5432/edumeta
+      OPENSEARCH_URL: http://opensearch:9200
+    command:
+      - python
+      - /app/scripts/live_data_gate.py
+      - --postgres-dsn
+      - postgresql://edumeta:edumeta@postgres:5432/edumeta
+      - --opensearch-url
+      - http://opensearch:9200
+      - --data-root
+      - /app/data/normalized
+      - --migrations-dir
+      - /app/infra/postgres
+      - --output-path
+      - /tmp/edumeta-bootstrap-report.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    restart: "no"
+
+  fast-router:
+    image: edumeta-fast-router:local
+    build:
+      context: ..
+      dockerfile: apps/fast-router/Dockerfile
+      args:
+        PIP_INDEX_URL: ${FAST_ROUTER_PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    environment:
+      POSTGRES_DSN: postgresql://edumeta:edumeta@postgres:5432/edumeta
+      OPENSEARCH_URL: http://opensearch:9200
+      INGESTION_DATA_ROOT: /app/data/ingestions
+      WEKNORA_BASE_URL: ${WEKNORA_BASE_URL:-}
+      WEKNORA_API_KEY: ${WEKNORA_API_KEY:-}
+      WEKNORA_KNOWLEDGE_BASE_ID: ${WEKNORA_KNOWLEDGE_BASE_ID:-}
+      WEKNORA_KB_TEMPLATE_ID: ${WEKNORA_KB_TEMPLATE_ID:-}
+      WEKNORA_API_KEY_HEADER: ${WEKNORA_API_KEY_HEADER:-X-API-Key}
+      WEKNORA_SEARCH_TIMEOUT_SECONDS: ${WEKNORA_SEARCH_TIMEOUT_SECONDS:-2.8}
+      TRACE_LOG_PATH: ${TRACE_LOG_PATH:-/app/data/traces/retrieval.jsonl}
+    volumes:
+      - ingestion_data:/app/data/ingestions
+      - ../data/traces:/app/data/traces
+    ports:
+      - "127.0.0.1:${FAST_ROUTER_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)); raise SystemExit(0 if d['status']=='ok' else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  tool-gateway:
+    build:
+      context: ..
+      dockerfile: apps/tool-gateway/Dockerfile
+      args:
+        NPM_REGISTRY: ${TOOL_GATEWAY_NPM_REGISTRY:-https://registry.npmmirror.com}
+    environment:
+      FAST_ROUTER_BASE_URL: http://fast-router:8000
+      FAST_ROUTER_TIMEOUT_MS: ${FAST_ROUTER_TIMEOUT_MS:-3500}
+    ports:
+      - "127.0.0.1:${MCP_PORT:-8765}:8765"
+    depends_on:
+      fast-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8765/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:
+  opensearch_data:
+  ingestion_data:

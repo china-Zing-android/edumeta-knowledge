@@ -1,0 +1,27 @@
+{
+  "settings": { "index": { "number_of_shards": 1, "number_of_replicas": 0 } },
+  "mappings": {
+    "properties": {
+      "fact_id": { "type": "keyword" },
+      "university_id": { "type": "keyword" },
+      "program_id": { "type": "keyword" },
+      "entry_id": { "type": "keyword" },
+      "fact_type": { "type": "keyword" },
+      "fact_key": { "type": "keyword" },
+      "raw_value": { "type": "text" },
+      "normalized_value": { "type": "object", "enabled": true },
+      "admission_cycle": { "type": "keyword" },
+      "term": { "type": "keyword" },
+      "source_id": { "type": "keyword" },
+      "source_url": { "type": "keyword" },
+      "evidence_ids": { "type": "keyword" },
+      "weknora_chunk_ids": { "type": "keyword" },
+      "capture_date": { "type": "date" },
+      "dataset_version": { "type": "keyword" },
+      "review_status": { "type": "keyword" },
+      "conflict_status": { "type": "keyword" },
+      "status": { "type": "keyword" }
+    }
+  }
+}
+

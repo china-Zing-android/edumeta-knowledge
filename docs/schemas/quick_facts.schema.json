@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edumeta.example/schemas/quick_facts.schema.json",
+  "title": "Quick Fact / Fact Store Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fact_id",
+    "university_id",
+    "fact_type",
+    "fact_key",
+    "raw_value",
+    "source_id",
+    "source_url",
+    "capture_date",
+    "dataset_version",
+    "review_status",
+    "conflict_status"
+  ],
+  "properties": {
+    "fact_id": { "type": "string", "pattern": "^fact_[a-z0-9_]+$" },
+    "university_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "program_id": { "type": ["string", "null"] },
+    "entry_id": { "type": ["string", "null"] },
+    "fact_type": {
+      "type": "string",
+      "enum": [
+        "deadline",
+        "application_fee",
+        "fee_waiver",
+        "gre_gmat_policy",
+        "english_requirement",
+        "tuition",
+        "cost_of_attendance",
+        "funding_model",
+        "application_platform",
+        "test_code",
+        "financial_aid_policy",
+        "admission_policy"
+      ]
+    },
+    "fact_key": { "type": "string", "minLength": 1 },
+    "raw_value": { "type": "string", "minLength": 1 },
+    "normalized_value": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "unit": { "type": ["string", "null"] },
+    "currency": { "type": ["string", "null"] },
+    "admission_cycle": { "type": ["string", "null"] },
+    "term": { "type": ["string", "null"] },
+    "source_id": { "type": "string", "pattern": "^src_[a-z0-9_]+$" },
+    "source_url": { "type": "string", "format": "uri" },
+    "evidence_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "weknora_chunk_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "capture_date": { "type": "string", "format": "date" },
+    "dataset_version": { "type": "string" },
+    "source_version": { "type": ["string", "null"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1, "default": 1 },
+    "review_status": {
+      "type": "string",
+      "enum": ["auto_extracted", "review_required", "approved", "rejected"]
+    },
+    "conflict_status": {
+      "type": "string",
+      "enum": ["none", "conflict", "resolved", "unknown"]
+    },
+    "status": { "type": "string", "enum": ["active", "deprecated", "inactive", "superseded"], "default": "active" }
+  }
+}
+

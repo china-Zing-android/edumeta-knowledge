@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edumeta.example/schemas/url_manifest.schema.json",
+  "title": "URL Manifest Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "url_id",
+    "source_id",
+    "university_id",
+    "entry_ids",
+    "source_url",
+    "canonical_url",
+    "url_type",
+    "topics",
+    "official_source",
+    "import_status",
+    "capture_date",
+    "dataset_version"
+  ],
+  "properties": {
+    "url_id": { "type": "string", "pattern": "^url_[a-z0-9_]+$" },
+    "source_id": { "type": "string", "pattern": "^src_[a-z0-9_]+$" },
+    "university_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "program_id": { "type": ["string", "null"] },
+    "entry_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "source_url": { "type": "string", "format": "uri" },
+    "canonical_url": { "type": "string", "format": "uri" },
+    "url_type": { "type": "string" },
+    "topics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+    "official_source": { "type": "boolean" },
+    "priority": { "type": "integer", "minimum": 1, "default": 1 },
+    "weknora_collection_id": { "type": ["string", "null"] },
+    "weknora_knowledge_id": { "type": ["string", "null"] },
+    "weknora_document_id": { "type": ["string", "null"] },
+    "weknora_import_job_id": { "type": ["string", "null"] },
+    "weknora_chunk_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "import_status": {
+      "type": "string",
+      "enum": ["not_required", "pending", "running", "success", "failed", "skipped"]
+    },
+    "import_error": { "type": ["string", "null"] },
+    "content_hash": { "type": ["string", "null"] },
+    "capture_date": { "type": "string", "format": "date" },
+    "dataset_version": { "type": "string" },
+    "source_version": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["active", "deprecated", "inactive", "superseded"], "default": "active" }
+  }
+}

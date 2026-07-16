@@ -1,0 +1,26 @@
+{
+  "settings": { "index": { "number_of_shards": 1, "number_of_replicas": 0 } },
+  "mappings": {
+    "properties": {
+      "url_id": { "type": "keyword" },
+      "source_id": { "type": "keyword" },
+      "university_id": { "type": "keyword" },
+      "program_id": { "type": "keyword" },
+      "entry_ids": { "type": "keyword" },
+      "source_url": { "type": "keyword" },
+      "canonical_url": { "type": "keyword" },
+      "url_type": { "type": "keyword" },
+      "topics": { "type": "keyword" },
+      "official_source": { "type": "boolean" },
+      "weknora_collection_id": { "type": "keyword" },
+      "weknora_knowledge_id": { "type": "keyword" },
+      "weknora_document_id": { "type": "keyword" },
+      "weknora_chunk_ids": { "type": "keyword" },
+      "weknora_tag_ids": { "type": "keyword" },
+      "import_status": { "type": "keyword" },
+      "capture_date": { "type": "date" },
+      "dataset_version": { "type": "keyword" },
+      "status": { "type": "keyword" }
+    }
+  }
+}
