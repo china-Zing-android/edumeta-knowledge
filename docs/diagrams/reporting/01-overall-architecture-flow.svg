@@ -1,0 +1,62 @@
+<svg viewBox="0 0 1600 1040" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker>
+    <marker id="cyan-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#22d3ee"/></marker>
+    <marker id="amber-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#fbbf24"/></marker>
+    <style>
+      text{font-family:'JetBrains Mono','Noto Sans SC','PingFang SC',sans-serif;letter-spacing:0}.title{font-size:26px;font-weight:700;fill:#f8fafc}.subtitle{font-size:12px;fill:#94a3b8}.lane{font-size:13px;font-weight:700}.name{font-size:13px;font-weight:700;fill:#f8fafc}.desc{font-size:10px;fill:#cbd5e1}.tiny{font-size:9px;fill:#94a3b8}.tag{font-size:9px;font-weight:700}.box{stroke-width:1.5}.region{fill:none;stroke-width:1.2;stroke-dasharray:8 5}
+    </style>
+  </defs>
+  <rect width="1600" height="1040" fill="#0f172a"/><rect width="1600" height="1040" fill="url(#grid)"/>
+  <text x="42" y="48" class="title">大学知识检索子模块：整体架构与数据来源</text>
+  <text x="42" y="74" class="subtitle">长期架构的最小实现：MD 提供快速结构化知识，WeKnora 仅在用户明确追问页面细节时提供证据</text>
+
+  <rect x="32" y="104" width="1536" height="410" rx="14" class="region" stroke="#34d399"/>
+  <text x="50" y="132" class="lane" fill="#34d399">A. 数据构建 / 增量导入</text>
+  <rect x="64" y="172" width="170" height="74" rx="7" fill="#0f172a"/><rect x="64" y="172" width="170" height="74" rx="7" class="box" fill="rgba(8,51,68,.65)" stroke="#22d3ee"/>
+  <text x="149" y="201" class="name" text-anchor="middle">学校 Markdown</text><text x="149" y="221" class="desc" text-anchor="middle">上传 / 同校更新 / 新校新增</text><text x="149" y="239" class="tag" fill="#22d3ee" text-anchor="middle">MD 原始输入</text>
+  <path d="M234 209H292" stroke="#22d3ee" stroke-width="2" marker-end="url(#cyan-arrow)"/>
+  <rect x="292" y="160" width="190" height="98" rx="7" fill="#0f172a"/><rect x="292" y="160" width="190" height="98" rx="7" class="box" fill="rgba(6,78,59,.55)" stroke="#34d399"/>
+  <text x="387" y="188" class="name" text-anchor="middle">Parser + Adapter</text><text x="387" y="208" class="desc" text-anchor="middle">标题 / 表格 / 事实 / URL</text><text x="387" y="226" class="desc" text-anchor="middle">稳定 ID · schema · diff</text><text x="387" y="245" class="tiny" text-anchor="middle">不同 MD 格式只在 Adapter 内适配</text>
+  <path d="M482 209H540" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="540" y="142" width="260" height="160" rx="9" fill="#0f172a"/><rect x="540" y="142" width="260" height="160" rx="9" class="box" fill="rgba(8,51,68,.48)" stroke="#22d3ee"/>
+  <text x="670" y="170" class="name" text-anchor="middle">MD 结构化投影</text>
+  <text x="565" y="198" class="desc">• catalog_entries：院校 / 专业目录</text><text x="565" y="221" class="desc">• quick_facts：学费 / 截止 / 语言</text><text x="565" y="244" class="desc">• entity_contexts：上下文 / 相关实体</text><text x="565" y="267" class="desc">• source_registry：URL 与实体关系</text><text x="670" y="291" class="tag" fill="#22d3ee" text-anchor="middle">全部从 MD 提取</text>
+
+  <path d="M800 188H870" stroke="#a78bfa" stroke-width="1.8" marker-end="url(#arrow)"/><path d="M800 260H870" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#amber-arrow)"/>
+  <rect x="870" y="138" width="220" height="112" rx="7" fill="#0f172a"/><rect x="870" y="138" width="220" height="112" rx="7" class="box" fill="rgba(76,29,149,.48)" stroke="#a78bfa"/>
+  <text x="980" y="168" class="name" text-anchor="middle">PostgreSQL 控制平面</text><text x="980" y="191" class="desc" text-anchor="middle">版本 / 来源 / 事实 / Job</text><text x="980" y="213" class="desc" text-anchor="middle">staging → validate → current</text><text x="980" y="236" class="tiny" text-anchor="middle">权威状态，可回滚</text>
+  <rect x="870" y="270" width="220" height="112" rx="7" fill="#0f172a"/><rect x="870" y="270" width="220" height="112" rx="7" class="box" fill="rgba(120,53,15,.40)" stroke="#fbbf24"/>
+  <text x="980" y="300" class="name" text-anchor="middle">WeKnora URL Import</text><text x="980" y="323" class="desc" text-anchor="middle">抓取 MD 中提炼的官方 URL</text><text x="980" y="345" class="desc" text-anchor="middle">生成 knowledge / document / chunk</text><text x="980" y="368" class="tag" fill="#fbbf24" text-anchor="middle">网页正文来源</text>
+  <path d="M1090 194H1160" stroke="#a78bfa" stroke-width="1.8" marker-end="url(#arrow)"/><path d="M1090 326H1160" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#amber-arrow)"/>
+  <rect x="1160" y="138" width="248" height="112" rx="7" fill="#0f172a"/><rect x="1160" y="138" width="248" height="112" rx="7" class="box" fill="rgba(76,29,149,.48)" stroke="#a78bfa"/>
+  <text x="1284" y="168" class="name" text-anchor="middle">OpenSearch L1</text><text x="1284" y="191" class="desc" text-anchor="middle">目录 · 事实 · URL scope · MD context</text><text x="1284" y="213" class="desc" text-anchor="middle">current alias + 版本化文档</text><text x="1284" y="236" class="tag" fill="#22d3ee" text-anchor="middle">查询内容来自 MD 投影</text>
+  <rect x="1160" y="270" width="248" height="112" rx="7" fill="#0f172a"/><rect x="1160" y="270" width="248" height="112" rx="7" class="box" fill="rgba(120,53,15,.40)" stroke="#fbbf24"/>
+  <text x="1284" y="300" class="name" text-anchor="middle">WeKnora Evidence KB</text><text x="1284" y="323" class="desc" text-anchor="middle">按学校 KB + knowledge_ids 限定</text><text x="1284" y="345" class="desc" text-anchor="middle">返回真实网页 chunk 证据</text><text x="1284" y="368" class="tag" fill="#fbbf24" text-anchor="middle">仅保存 URL 页面内容</text>
+
+  <rect x="32" y="540" width="1536" height="414" rx="14" class="region" stroke="#60a5fa"/>
+  <text x="50" y="568" class="lane" fill="#60a5fa">B. 在线检索 / Agent 调用</text>
+  <rect x="64" y="635" width="184" height="90" rx="7" fill="#0f172a"/><rect x="64" y="635" width="184" height="90" rx="7" class="box" fill="rgba(8,51,68,.55)" stroke="#22d3ee"/>
+  <text x="156" y="665" class="name" text-anchor="middle">Claude / Codex / Agent</text><text x="156" y="688" class="desc" text-anchor="middle">用户自然语言问题</text><text x="156" y="710" class="tiny" text-anchor="middle">多轮上下文由 Agent 保持</text>
+  <path d="M248 680H310" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <rect x="310" y="625" width="190" height="110" rx="7" fill="#0f172a"/><rect x="310" y="625" width="190" height="110" rx="7" class="box" fill="rgba(30,41,59,.7)" stroke="#94a3b8"/>
+  <text x="405" y="655" class="name" text-anchor="middle">MCP Gateway / HTTP</text><text x="405" y="679" class="desc" text-anchor="middle">原样转发 query 与 scope</text><text x="405" y="701" class="desc" text-anchor="middle">Gateway 不含业务逻辑</text><text x="405" y="723" class="tiny" text-anchor="middle">统一结构化返回</text>
+  <path d="M500 680H564" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <rect x="564" y="610" width="236" height="140" rx="8" fill="#0f172a"/><rect x="564" y="610" width="236" height="140" rx="8" class="box" fill="rgba(6,78,59,.55)" stroke="#34d399"/>
+  <text x="682" y="640" class="name" text-anchor="middle">Fast Router</text><text x="682" y="664" class="desc" text-anchor="middle">学校解析 · 方向 · QueryPlan</text><text x="682" y="687" class="desc" text-anchor="middle">L1 精确匹配 · source scope</text><text x="682" y="710" class="desc" text-anchor="middle">Evidence Gate · trace / timing</text><text x="682" y="735" class="tiny" text-anchor="middle">无运行时 LLM · 无会话状态</text>
+  <path d="M800 650H902" stroke="#22d3ee" stroke-width="2" marker-end="url(#cyan-arrow)"/><text x="851" y="638" class="tag" fill="#22d3ee" text-anchor="middle">默认先查</text>
+  <path d="M800 716H902" stroke="#fbbf24" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#amber-arrow)"/><text x="851" y="744" class="tag" fill="#fbbf24" text-anchor="middle">明确细节才查</text>
+  <rect x="902" y="592" width="242" height="116" rx="7" fill="#0f172a"/><rect x="902" y="592" width="242" height="116" rx="7" class="box" fill="rgba(8,51,68,.48)" stroke="#22d3ee"/>
+  <text x="1023" y="622" class="name" text-anchor="middle">OpenSearch L1</text><text x="1023" y="646" class="desc" text-anchor="middle">discovery：目录 + MD context</text><text x="1023" y="669" class="desc" text-anchor="middle">fact：原始事实值 + source</text><text x="1023" y="694" class="tag" fill="#22d3ee" text-anchor="middle">MD 提取内容 · 快速路径</text>
+  <rect x="902" y="738" width="242" height="116" rx="7" fill="#0f172a"/><rect x="902" y="738" width="242" height="116" rx="7" class="box" fill="rgba(120,53,15,.40)" stroke="#fbbf24"/>
+  <text x="1023" y="768" class="name" text-anchor="middle">Scoped WeKnora</text><text x="1023" y="792" class="desc" text-anchor="middle">detail / fact miss + scope 已确定</text><text x="1023" y="815" class="desc" text-anchor="middle">仅搜 L1 选中的 URL knowledge_ids</text><text x="1023" y="840" class="tag" fill="#fbbf24" text-anchor="middle">URL 网页正文 · 深度证据</text>
+  <path d="M1144 650H1210" stroke="#22d3ee" stroke-width="1.8" marker-end="url(#cyan-arrow)"/><path d="M1144 796H1210" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#amber-arrow)"/>
+  <rect x="1210" y="625" width="286" height="190" rx="9" fill="#0f172a"/><rect x="1210" y="625" width="286" height="190" rx="9" class="box" fill="rgba(59,130,246,.34)" stroke="#60a5fa"/>
+  <text x="1353" y="655" class="name" text-anchor="middle">统一结构化响应</text><text x="1238" y="686" class="desc">matches：目录记录 / 原始事实</text><text x="1238" y="711" class="desc">context：MD 投影的解释上下文</text><text x="1238" y="736" class="desc">evidence：WeKnora 真实网页 chunk</text><text x="1238" y="761" class="desc">warnings / missing_slots / timings</text><text x="1353" y="793" class="tiny" text-anchor="middle">Agent 再组织成面向学生的回答</text>
+
+  <rect x="64" y="888" width="1432" height="46" rx="7" fill="rgba(30,41,59,.72)" stroke="#475569"/>
+  <circle cx="92" cy="911" r="7" fill="#22d3ee"/><text x="110" y="915" class="tiny">MD 提取 / L1 快速知识</text><circle cx="330" cy="911" r="7" fill="#fbbf24"/><text x="348" y="915" class="tiny">URL 网页 / WeKnora 证据</text><circle cx="615" cy="911" r="7" fill="#a78bfa"/><text x="633" y="915" class="tiny">权威状态与查询存储</text><circle cx="900" cy="911" r="7" fill="#34d399"/><text x="918" y="915" class="tiny">确定性处理服务</text><text x="1220" y="915" class="tag" fill="#fb7185">规则：用户没问细节，不主动调用 WeKnora</text>
+  <text x="42" y="1008" class="subtitle">汇报要点：MD 决定“有什么、是什么、关键事实和关系”；WeKnora 回答“页面里具体怎么写”，两层通过 source_id / knowledge_id 严格关联。</text>
+</svg>

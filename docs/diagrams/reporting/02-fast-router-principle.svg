@@ -1,0 +1,51 @@
+<svg viewBox="0 0 1600 1260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+    <marker id="a" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker>
+    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#34d399"/></marker>
+    <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#fb7185"/></marker>
+    <marker id="aa" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#fbbf24"/></marker>
+    <style>text{font-family:'JetBrains Mono','Noto Sans SC','PingFang SC',sans-serif;letter-spacing:0}.title{font-size:26px;font-weight:700;fill:#f8fafc}.sub{font-size:12px;fill:#94a3b8}.name{font-size:13px;font-weight:700;fill:#f8fafc}.desc{font-size:10px;fill:#cbd5e1}.tiny{font-size:9px;fill:#94a3b8}.rule{font-size:10px;font-weight:700}.box{stroke-width:1.5}.lane{fill:none;stroke:#334155;stroke-width:1;stroke-dasharray:7 5}</style>
+  </defs>
+  <rect width="1600" height="1260" fill="#0f172a"/><rect width="1600" height="1260" fill="url(#grid2)"/>
+  <text x="40" y="48" class="title">Fast Router 原理：确定性匹配、分层路由与证据闸门</text><text x="40" y="75" class="sub">目标：L1 先快而准，只有明确细节且实体 scope 已确定时才触发 WeKnora</text>
+  <rect x="34" y="104" width="1532" height="1070" rx="14" class="lane"/>
+
+  <rect x="588" y="120" width="424" height="70" rx="28" fill="rgba(59,130,246,.35)" stroke="#60a5fa" stroke-width="1.8"/><text x="800" y="149" class="name" text-anchor="middle">请求输入</text><text x="800" y="172" class="desc" text-anchor="middle">query · university_id? · context? · direction · filters · max_results</text>
+  <path d="M800 190V232" stroke="#64748b" stroke-width="1.8" marker-end="url(#a)"/>
+
+  <rect x="555" y="232" width="490" height="90" rx="7" fill="rgba(6,78,59,.52)" stroke="#34d399" class="box"/><text x="800" y="261" class="name" text-anchor="middle">1. 学校与方向解析</text><text x="800" y="285" class="desc" text-anchor="middle">显式 university_id 优先 → 本地 alias/version cache → 未知学校立即 not_found</text><text x="800" y="306" class="tiny" text-anchor="middle">不会默认 MIT；显式 scope 失败不能扩大成 range</text>
+  <path d="M800 322V360" stroke="#64748b" stroke-width="1.8" marker-end="url(#a)"/>
+  <g transform="translate(800 405)"><polygon points="0,-45 105,0 0,45 -105,0" fill="rgba(120,53,15,.38)" stroke="#fbbf24" stroke-width="1.7"/><text y="-5" class="name" text-anchor="middle">搜索方向？</text><text y="15" class="tiny" text-anchor="middle">auto / downward / range / upward</text></g>
+  <path d="M695 405H390V475" fill="none" stroke="#fbbf24" stroke-width="1.6" marker-end="url(#aa)"/><text x="520" y="393" class="rule" fill="#fbbf24">明确“哪些院校” + 学科 → upward</text>
+  <path d="M905 405H1210V475" fill="none" stroke="#fbbf24" stroke-width="1.6" marker-end="url(#aa)"/><text x="1080" y="393" class="rule" fill="#fbbf24">无单校 + 国家/区域/层级 filters → range</text>
+  <path d="M800 450V500" stroke="#34d399" stroke-width="2" marker-end="url(#ag)"/><text x="817" y="480" class="rule" fill="#34d399">默认 downward</text>
+  <rect x="235" y="475" width="310" height="94" rx="7" fill="rgba(8,51,68,.5)" stroke="#22d3ee" class="box"/><text x="390" y="504" class="name" text-anchor="middle">跨校学科检索</text><text x="390" y="528" class="desc" text-anchor="middle">discipline taxonomy + current catalog</text><text x="390" y="551" class="tiny" text-anchor="middle">只查已入库院校，不做排名，不查 WeKnora</text>
+  <rect x="1055" y="475" width="310" height="94" rx="7" fill="rgba(8,51,68,.5)" stroke="#22d3ee" class="box"/><text x="1210" y="504" class="name" text-anchor="middle">范围过滤检索</text><text x="1210" y="528" class="desc" text-anchor="middle">country / region / level / school_tier</text><text x="1210" y="551" class="tiny" text-anchor="middle">OpenSearch current universities/catalog</text>
+  <path d="M390 569V1090H620" fill="none" stroke="#64748b" stroke-dasharray="6 4" marker-end="url(#a)"/><path d="M1210 569V1090H980" fill="none" stroke="#64748b" stroke-dasharray="6 4" marker-end="url(#a)"/>
+
+  <rect x="555" y="500" width="490" height="118" rx="7" fill="rgba(6,78,59,.52)" stroke="#34d399" class="box"/><text x="800" y="529" class="name" text-anchor="middle">2. QueryPlan 意图分层</text><text x="590" y="557" class="desc">优先级 ① detail 短语：申请材料 / 课程设置 / 资格 / 文化</text><text x="590" y="579" class="desc">优先级 ② fact 词：deadline / tuition / TOEFL / GRE / funding</text><text x="590" y="601" class="desc">否则 ③ discovery：院校 / 专业 / 关系 / 概览</text>
+  <rect x="1080" y="605" width="420" height="92" rx="7" fill="rgba(136,19,55,.30)" stroke="#fb7185" class="box"/><text x="1290" y="632" class="rule" fill="#fb7185" text-anchor="middle">关键规则：detail 高于 incidental fact</text><text x="1290" y="655" class="desc" text-anchor="middle">“申请材料 + TOEFL/GRE”仍然是 detail</text><text x="1290" y="677" class="tiny" text-anchor="middle">“Materials Science”不会被裸 materials 误判</text>
+  <path d="M800 618V662" stroke="#64748b" stroke-width="1.8" marker-end="url(#a)"/>
+  <rect x="505" y="662" width="590" height="156" rx="8" fill="rgba(8,51,68,.5)" stroke="#22d3ee" class="box"/><text x="800" y="692" class="name" text-anchor="middle">3. OpenSearch L1 并行 _msearch</text>
+  <rect x="530" y="716" width="125" height="72" rx="6" fill="rgba(59,130,246,.25)" stroke="#60a5fa"/><text x="592" y="742" class="desc" text-anchor="middle">Catalog</text><text x="592" y="763" class="tiny" text-anchor="middle">精确 code + BM25</text>
+  <rect x="668" y="716" width="125" height="72" rx="6" fill="rgba(59,130,246,.25)" stroke="#60a5fa"/><text x="730" y="742" class="desc" text-anchor="middle">Quick Facts</text><text x="730" y="763" class="tiny" text-anchor="middle">fact_type + version</text>
+  <rect x="806" y="716" width="125" height="72" rx="6" fill="rgba(59,130,246,.25)" stroke="#60a5fa"/><text x="868" y="742" class="desc" text-anchor="middle">Sources</text><text x="868" y="763" class="tiny" text-anchor="middle">topics + URL scope</text>
+  <rect x="944" y="716" width="125" height="72" rx="6" fill="rgba(59,130,246,.25)" stroke="#60a5fa"/><text x="1006" y="742" class="desc" text-anchor="middle">Entity Context</text><text x="1006" y="763" class="tiny" text-anchor="middle">MD 物化上下文</text>
+  <path d="M800 818V852" stroke="#64748b" stroke-width="1.8" marker-end="url(#a)"/>
+  <rect x="540" y="852" width="520" height="80" rx="7" fill="rgba(76,29,149,.43)" stroke="#a78bfa" class="box"/><text x="800" y="880" class="name" text-anchor="middle">4. 精确实体收敛</text><text x="800" y="904" class="desc" text-anchor="middle">专业 context 已解析 → 第二次按 exact source_id 查询 facts / sources</text><text x="800" y="923" class="tiny" text-anchor="middle">移除 URL slug 猜测，阻止 Economics 混入 DEDP 等跨项目污染</text>
+  <path d="M800 932V970" stroke="#64748b" stroke-width="1.8" marker-end="url(#a)"/>
+  <g transform="translate(800 1015)"><polygon points="0,-45 112,0 0,45 -112,0" fill="rgba(120,53,15,.38)" stroke="#fbbf24" stroke-width="1.7"/><text y="-5" class="name" text-anchor="middle">L1 是否足够？</text><text y="16" class="tiny" text-anchor="middle">stage + match + scope gate</text></g>
+  <path d="M688 1015H500V1090H620" fill="none" stroke="#34d399" stroke-width="1.8" marker-end="url(#ag)"/><text x="585" y="1002" class="rule" fill="#34d399">discovery 或 fact hit</text>
+  <path d="M912 1015H1095V950H1235" fill="none" stroke="#fb7185" stroke-width="1.6" marker-end="url(#ar)"/><text x="1100" y="1002" class="rule" fill="#fb7185">scope 模糊</text>
+  <rect x="1140" y="895" width="300" height="94" rx="7" fill="rgba(136,19,55,.32)" stroke="#fb7185" class="box"/><text x="1290" y="924" class="name" text-anchor="middle">Clarification / Not Found</text><text x="1290" y="948" class="desc" text-anchor="middle">缺学校 / 缺项目 / 未入库</text><text x="1290" y="971" class="tiny" text-anchor="middle">禁止猜测、禁止默认学校、禁止查 WeKnora</text>
+  <path d="M800 1060V1095" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#aa)"/><text x="817" y="1083" class="rule" fill="#fbbf24">detail 或 fact miss + scope 已确定</text>
+  <rect x="650" y="1095" width="300" height="86" rx="7" fill="rgba(120,53,15,.40)" stroke="#fbbf24" class="box"/><text x="800" y="1123" class="name" text-anchor="middle">5. Scoped WeKnora Search</text><text x="800" y="1147" class="desc" text-anchor="middle">按 KB 分组 + knowledge_ids 服务端过滤</text><text x="800" y="1168" class="tiny" text-anchor="middle">Evidence Gate：source / school / version / chunk_text 必须一致</text>
+  <rect x="620" y="1070" width="360" height="80" rx="7" fill="rgba(59,130,246,.30)" stroke="#60a5fa" class="box" opacity="0"/>
+  <path d="M800 1181V1205" stroke="#64748b" marker-end="url(#a)"/>
+  <rect x="520" y="1205" width="560" height="42" rx="20" fill="rgba(59,130,246,.35)" stroke="#60a5fa"/><text x="800" y="1231" class="name" text-anchor="middle">统一返回：mode · matches · context · evidence · warnings · timings · trace_id</text>
+  <rect x="48" y="625" width="390" height="212" rx="8" fill="rgba(30,41,59,.70)" stroke="#475569"/>
+  <text x="243" y="655" class="name" text-anchor="middle">匹配规则清单</text><text x="72" y="684" class="desc">• course_code / entry_id：精确匹配优先</text><text x="72" y="708" class="desc">• program 名：phrase + boosted multi_match</text><text x="72" y="732" class="desc">• level / degree / version / active：强过滤</text><text x="72" y="756" class="desc">• compare / relationship：最多 3 个主实体</text><text x="72" y="780" class="desc">• related_entities：只做上下文，不当事实答案</text><text x="72" y="804" class="desc">• review_required / conflict：返回 warning</text>
+  <rect x="1162" y="712" width="340" height="152" rx="8" fill="rgba(30,41,59,.70)" stroke="#475569"/>
+  <text x="1332" y="742" class="name" text-anchor="middle">Fast Router 明确不做</text><text x="1188" y="771" class="desc">• 不调用运行时 LLM</text><text x="1188" y="795" class="desc">• 不保存多轮会话</text><text x="1188" y="819" class="desc">• 不做排名 / L0 fallback</text><text x="1188" y="843" class="desc">• 不把 context 伪装成 evidence</text>
+</svg>
