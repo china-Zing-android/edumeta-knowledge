@@ -1,39 +1,71 @@
-<svg viewBox="0 0 1600 1050" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 1600 940" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <pattern id="grid3" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
-    <marker id="av" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#a78bfa"/></marker><marker id="ac" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#22d3ee"/></marker><marker id="am" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#fbbf24"/></marker>
-    <style>text{font-family:'JetBrains Mono','Noto Sans SC','PingFang SC',sans-serif;letter-spacing:0}.title{font-size:26px;font-weight:700;fill:#f8fafc}.sub{font-size:12px;fill:#94a3b8}.name{font-size:13px;font-weight:700;fill:#f8fafc}.desc{font-size:10px;fill:#cbd5e1}.tiny{font-size:9px;fill:#94a3b8}.section{font-size:13px;font-weight:700}.box{stroke-width:1.5}.region{fill:none;stroke-width:1.2;stroke-dasharray:8 5}</style>
+    <pattern id="g3" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="0.5"/></pattern>
+    <marker id="a3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker>
+    <marker id="c3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#22d3ee"/></marker>
+    <marker id="m3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#fbbf24"/></marker>
+    <style>text{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;letter-spacing:0}.title{font-size:28px;font-weight:700;fill:#f8fafc}.sub{font-size:14px;fill:#94a3b8}.h{font-size:18px;font-weight:700;fill:#f8fafc}.p{font-size:13px;fill:#cbd5e1}.small{font-size:11px;fill:#94a3b8}.tag{font-size:12px;font-weight:700}.box{stroke-width:1.8}</style>
   </defs>
-  <rect width="1600" height="1050" fill="#0f172a"/><rect width="1600" height="1050" fill="url(#grid3)"/>
-  <text x="42" y="48" class="title">数据存储架构：权威层、查询层与网页证据层</text><text x="42" y="75" class="sub">PostgreSQL 是权威控制面；OpenSearch 与 WeKnora 都是可重建的服务层，不承担版本真源</text>
+  <rect width="1600" height="940" fill="#0f172a"/><rect width="1600" height="940" fill="url(#g3)"/>
+  <text x="48" y="52" class="title">数据放在哪里？可以理解成 4 个不同用途的“柜子”</text>
+  <text x="48" y="82" class="sub">不是把所有东西塞进一个知识库，而是让每类数据放在最适合它的位置</text>
 
-  <rect x="40" y="112" width="300" height="800" rx="14" class="region" stroke="#22d3ee"/><text x="58" y="140" class="section" fill="#22d3ee">输入与文件快照</text>
-  <rect x="72" y="178" width="236" height="94" rx="7" fill="rgba(8,51,68,.55)" stroke="#22d3ee" class="box"/><text x="190" y="208" class="name" text-anchor="middle">原始 Markdown</text><text x="190" y="232" class="desc" text-anchor="middle">每次上传保存 input.md</text><text x="190" y="254" class="tiny" text-anchor="middle">Docker volume: ingestion_data</text>
-  <rect x="72" y="315" width="236" height="132" rx="7" fill="rgba(8,51,68,.48)" stroke="#22d3ee" class="box"/><text x="190" y="345" class="name" text-anchor="middle">解析产物 / JSONL</text><text x="96" y="374" class="desc">catalog_entries</text><text x="96" y="397" class="desc">quick_facts</text><text x="96" y="420" class="desc">source_registry / url_manifest</text><text x="190" y="441" class="tiny" text-anchor="middle">导入导出与 bootstrap 数据</text>
-  <rect x="72" y="494" width="236" height="126" rx="7" fill="rgba(120,53,15,.34)" stroke="#fbbf24" class="box"/><text x="190" y="524" class="name" text-anchor="middle">MD 中的官方 URL</text><text x="96" y="553" class="desc">canonical_url</text><text x="96" y="576" class="desc">topics / entry_ids / source_id</text><text x="190" y="604" class="tiny" text-anchor="middle">仅新增或变化 URL 触发导入</text>
-  <rect x="72" y="670" width="236" height="120" rx="7" fill="rgba(30,41,59,.68)" stroke="#94a3b8" class="box"/><text x="190" y="700" class="name" text-anchor="middle">稳定 ID 链</text><text x="190" y="727" class="desc" text-anchor="middle">university_id → version_id</text><text x="190" y="750" class="desc" text-anchor="middle">entry_id ↔ source_id ↔ fact_id</text><text x="190" y="775" class="tiny" text-anchor="middle">跨版本复用实体 ID</text>
+  <rect x="55" y="142" width="335" height="440" rx="16" fill="rgba(8,51,68,.46)" stroke="#22d3ee" class="box"/>
+  <circle cx="105" cy="190" r="27" fill="#0891b2"/><text x="105" y="198" fill="white" font-size="20" font-weight="700" text-anchor="middle">1</text>
+  <text x="222" y="197" class="h" text-anchor="middle">原始资料柜</text>
+  <text x="222" y="225" class="tag" fill="#22d3ee" text-anchor="middle">Markdown 文件</text>
+  <line x1="85" y1="250" x2="360" y2="250" stroke="#164e63"/>
+  <text x="85" y="286" class="p">这里保存：</text><text x="105" y="319" class="p">• 每次上传的学校原始资料</text><text x="105" y="350" class="p">• 解析后的标准文件</text><text x="105" y="381" class="p">• 文档中发现的官网链接</text>
+  <rect x="85" y="422" width="275" height="98" rx="10" fill="rgba(59,130,246,.22)" stroke="#60a5fa"/>
+  <text x="222" y="454" class="p" text-anchor="middle">例：MIT 专业列表、学费表、</text><text x="222" y="480" class="p" text-anchor="middle">研究生项目和相关官网 URL</text>
+  <text x="222" y="548" class="small" text-anchor="middle">作用：保留输入和重新处理的基础</text>
 
-  <rect x="382" y="112" width="590" height="800" rx="14" class="region" stroke="#a78bfa"/><text x="400" y="140" class="section" fill="#a78bfa">PostgreSQL：权威控制平面</text>
-  <rect x="418" y="170" width="236" height="116" rx="7" fill="rgba(76,29,149,.48)" stroke="#a78bfa" class="box"/><text x="536" y="199" class="name" text-anchor="middle">院校与版本</text><text x="442" y="228" class="desc">universities</text><text x="442" y="251" class="desc">school_versions</text><text x="536" y="274" class="tiny" text-anchor="middle">每校最多一个 current 指针</text>
-  <rect x="690" y="170" width="236" height="116" rx="7" fill="rgba(76,29,149,.48)" stroke="#a78bfa" class="box"/><text x="808" y="199" class="name" text-anchor="middle">导入运行状态</text><text x="714" y="228" class="desc">ingestion_runs</text><text x="714" y="251" class="desc">ingestion_records (staging)</text><text x="808" y="274" class="tiny" text-anchor="middle">accepted → validating → published</text>
-  <rect x="418" y="330" width="236" height="142" rx="7" fill="rgba(76,29,149,.48)" stroke="#a78bfa" class="box"/><text x="536" y="359" class="name" text-anchor="middle">目录与上下文</text><text x="442" y="388" class="desc">catalog_entries</text><text x="442" y="411" class="desc">entity_contexts</text><text x="442" y="434" class="desc">catalog_entry_disciplines</text><text x="536" y="458" class="tiny" text-anchor="middle">MD 的版本化结构化真源</text>
-  <rect x="690" y="330" width="236" height="142" rx="7" fill="rgba(76,29,149,.48)" stroke="#a78bfa" class="box"/><text x="808" y="359" class="name" text-anchor="middle">来源与事实</text><text x="714" y="388" class="desc">source_registry</text><text x="714" y="411" class="desc">source_entry_links</text><text x="714" y="434" class="desc">fact_store</text><text x="808" y="458" class="tiny" text-anchor="middle">URL 生命周期 + 原始事实 + 审核状态</text>
-  <rect x="418" y="520" width="508" height="132" rx="7" fill="rgba(76,29,149,.48)" stroke="#a78bfa" class="box"/><text x="672" y="550" class="name" text-anchor="middle">WeKnora Import Job Queue</text><text x="448" y="579" class="desc">weknora_import_jobs：queued / running / success / failed / superseded</text><text x="448" y="603" class="desc">记录 knowledge_base_id / knowledge_id / document_id / chunk_ids</text><text x="672" y="632" class="tiny" text-anchor="middle">worker 使用 FOR UPDATE SKIP LOCKED；URL 变化只新增受影响 Job</text>
-  <rect x="418" y="704" width="508" height="154" rx="7" fill="rgba(30,41,59,.70)" stroke="#94a3b8" class="box"/><text x="672" y="734" class="name" text-anchor="middle">版本发布规则</text><text x="448" y="764" class="desc">1. 新版本先写 staging，不改变 current</text><text x="448" y="788" class="desc">2. 发布并核验 OpenSearch 文档数量</text><text x="448" y="812" class="desc">3. 单事务切换 current；旧版本标 superseded</text><text x="448" y="836" class="desc">4. removed 只标 inactive，不物理删除</text>
+  <path d="M390 362H430" stroke="#64748b" stroke-width="2" marker-end="url(#a3)"/>
+  <rect x="430" y="142" width="335" height="440" rx="16" fill="rgba(76,29,149,.46)" stroke="#a78bfa" class="box"/>
+  <circle cx="480" cy="190" r="27" fill="#7c3aed"/><text x="480" y="198" fill="white" font-size="20" font-weight="700" text-anchor="middle">2</text>
+  <text x="598" y="197" class="h" text-anchor="middle">管理账本</text>
+  <text x="598" y="225" class="tag" fill="#a78bfa" text-anchor="middle">PostgreSQL</text>
+  <line x1="460" y1="250" x2="735" y2="250" stroke="#4c1d95"/>
+  <text x="460" y="286" class="p">这里记录：</text><text x="480" y="319" class="p">• 哪些学校已经入库</text><text x="480" y="350" class="p">• 当前使用哪个数据版本</text><text x="480" y="381" class="p">• 每个事实和官网链接的来源</text><text x="480" y="412" class="p">• WeKnora 导入成功还是失败</text>
+  <rect x="460" y="446" width="275" height="74" rx="10" fill="rgba(76,29,149,.28)" stroke="#a78bfa"/>
+  <text x="598" y="476" class="p" text-anchor="middle">例：MIT 当前版本、Economics</text><text x="598" y="501" class="p" text-anchor="middle">专业关联哪个官方页面</text>
+  <text x="598" y="548" class="small" text-anchor="middle">作用：系统的权威记录，可回滚</text>
 
-  <rect x="1014" y="112" width="546" height="382" rx="14" class="region" stroke="#22d3ee"/><text x="1032" y="140" class="section" fill="#22d3ee">OpenSearch：L1 在线查询投影</text>
-  <rect x="1050" y="172" width="474" height="238" rx="8" fill="rgba(8,51,68,.46)" stroke="#22d3ee" class="box"/><text x="1287" y="202" class="name" text-anchor="middle">5 个 Global Current Aliases</text>
-  <text x="1080" y="238" class="desc">l1_universities_current</text><text x="1080" y="268" class="desc">l1_catalog_entries_current</text><text x="1080" y="298" class="desc">l1_quick_facts_current</text><text x="1080" y="328" class="desc">l1_sources_current</text><text x="1080" y="358" class="desc">l1_entity_contexts_current</text><text x="1287" y="392" class="tiny" text-anchor="middle">文档 ID = university_id : dataset_version : entity_id</text>
-  <rect x="1050" y="426" width="474" height="42" rx="18" fill="rgba(59,130,246,.28)" stroke="#60a5fa"/><text x="1287" y="452" class="desc" text-anchor="middle">热路径只读 OpenSearch，不查询 PostgreSQL</text>
+  <path d="M765 362H805" stroke="#22d3ee" stroke-width="2.4" marker-end="url(#c3)"/>
+  <rect x="805" y="142" width="335" height="440" rx="16" fill="rgba(8,51,68,.46)" stroke="#22d3ee" class="box"/>
+  <circle cx="855" cy="190" r="27" fill="#0891b2"/><text x="855" y="198" fill="white" font-size="20" font-weight="700" text-anchor="middle">3</text>
+  <text x="973" y="197" class="h" text-anchor="middle">快速查找架</text>
+  <text x="973" y="225" class="tag" fill="#22d3ee" text-anchor="middle">OpenSearch</text>
+  <line x1="835" y1="250" x2="1110" y2="250" stroke="#164e63"/>
+  <text x="835" y="286" class="p">这里放方便检索的副本：</text><text x="855" y="319" class="p">• 学校和专业目录</text><text x="855" y="350" class="p">• 学费、截止时间、语言要求</text><text x="855" y="381" class="p">• 专业的简单介绍和相关方向</text><text x="855" y="412" class="p">• 专业对应的官网地址</text>
+  <rect x="835" y="446" width="275" height="74" rx="10" fill="rgba(8,51,68,.30)" stroke="#22d3ee"/>
+  <text x="973" y="476" class="p" text-anchor="middle">用户问常见问题时，</text><text x="973" y="501" class="p" text-anchor="middle">主要从这里快速找到答案</text>
+  <text x="973" y="548" class="small" text-anchor="middle">作用：快；可以从管理账本重建</text>
 
-  <rect x="1014" y="530" width="546" height="382" rx="14" class="region" stroke="#fbbf24"/><text x="1032" y="558" class="section" fill="#fbbf24">WeKnora：URL 网页证据层</text>
-  <rect x="1050" y="590" width="474" height="150" rx="8" fill="rgba(120,53,15,.40)" stroke="#fbbf24" class="box"/><text x="1287" y="620" class="name" text-anchor="middle">每校 KB / 每 URL Knowledge</text><text x="1080" y="651" class="desc">knowledge_base_id：院校 KB 边界</text><text x="1080" y="678" class="desc">knowledge_id / document_id：URL 文档</text><text x="1080" y="705" class="desc">chunk_id + chunk_text：可引用的真实证据</text><text x="1287" y="729" class="tiny" text-anchor="middle">同校更新复用 KB；切换 KB 时禁止继承旧 ID</text>
-  <rect x="1050" y="770" width="474" height="104" rx="8" fill="rgba(120,53,15,.32)" stroke="#fbbf24" class="box"/><text x="1287" y="800" class="name" text-anchor="middle">Scoped Search</text><text x="1287" y="827" class="desc" text-anchor="middle">Fast Router 从 l1_sources 取得 source_id + knowledge_ids</text><text x="1287" y="851" class="tiny" text-anchor="middle">只在选定 KB / URL 范围内检索，不做全库乱搜</text>
+  <path d="M1140 362H1180" stroke="#fbbf24" stroke-width="2.4" marker-end="url(#m3)"/>
+  <rect x="1180" y="142" width="365" height="440" rx="16" fill="rgba(120,53,15,.42)" stroke="#fbbf24" class="box"/>
+  <circle cx="1230" cy="190" r="27" fill="#d97706"/><text x="1230" y="198" fill="white" font-size="20" font-weight="700" text-anchor="middle">4</text>
+  <text x="1362" y="197" class="h" text-anchor="middle">官网全文柜</text>
+  <text x="1362" y="225" class="tag" fill="#fbbf24" text-anchor="middle">WeKnora</text>
+  <line x1="1210" y1="250" x2="1515" y2="250" stroke="#78350f"/>
+  <text x="1210" y="286" class="p">这里保存：</text><text x="1230" y="319" class="p">• 官网页面抓取后的正文</text><text x="1230" y="350" class="p">• 可引用的真实网页片段</text><text x="1230" y="381" class="p">• 页面属于哪个学校和专业</text>
+  <rect x="1210" y="422" width="305" height="98" rx="10" fill="rgba(120,53,15,.27)" stroke="#fbbf24"/>
+  <text x="1362" y="454" class="p" text-anchor="middle">例：EECS PhD 申请材料页面、</text><text x="1362" y="480" class="p" text-anchor="middle">Economics 课程设置页面</text>
+  <text x="1362" y="548" class="small" text-anchor="middle">作用：回答官网细节并提供证据</text>
 
-  <path d="M308 225H418" stroke="#a78bfa" stroke-width="1.8" marker-end="url(#av)"/><path d="M308 381H418" stroke="#a78bfa" stroke-width="1.8" marker-end="url(#av)"/><path d="M308 557H690" fill="none" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#am)"/>
-  <path d="M926 400H1050" stroke="#22d3ee" stroke-width="2" marker-end="url(#ac)"/><text x="988" y="388" class="tiny" fill="#22d3ee" text-anchor="middle">publish projection</text>
-  <path d="M926 586H1000V665H1050" fill="none" stroke="#fbbf24" stroke-width="2" marker-end="url(#am)"/><text x="986" y="644" class="tiny" fill="#fbbf24" text-anchor="middle">worker import</text>
-  <path d="M1287 740V770" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#am)"/>
+  <text x="55" y="638" class="tag" fill="#60a5fa">用户提问时怎么使用这 4 个柜子？</text>
+  <rect x="55" y="674" width="700" height="150" rx="14" fill="rgba(8,51,68,.28)" stroke="#22d3ee" class="box"/>
+  <text x="85" y="710" class="h">常见问题：只查“快速查找架”</text>
+  <text x="85" y="746" class="p">例：“MIT 本科学费是多少？” → 直接找到已整理的学费事实</text>
+  <text x="85" y="780" class="p">例：“MIT 有 Economics 本科吗？” → 找到专业和简单上下文</text>
+  <text x="85" y="807" class="small">查询速度快，不需要读取官网全文</text>
 
-  <rect x="64" y="944" width="1490" height="64" rx="8" fill="rgba(30,41,59,.72)" stroke="#475569"/><text x="90" y="970" class="desc">关联主线：</text><text x="180" y="970" class="desc" fill="#22d3ee">entry_id / fact_id</text><text x="330" y="970" class="desc">通过</text><text x="380" y="970" class="desc" fill="#a78bfa">source_id</text><text x="465" y="970" class="desc">关联到</text><text x="535" y="970" class="desc" fill="#fbbf24">knowledge_id / chunk_id</text><text x="90" y="994" class="tiny">可重建原则：OpenSearch 可由 PostgreSQL current 版本重新发布；WeKnora 可由 source_registry URL + import jobs 重新导入。</text>
+  <rect x="795" y="674" width="750" height="150" rx="14" fill="rgba(120,53,15,.25)" stroke="#fbbf24" class="box"/>
+  <text x="825" y="710" class="h">细节问题：先在快速架锁定对象，再去官网全文柜</text>
+  <text x="825" y="746" class="p">例：“MIT EECS PhD 要提交哪些材料？”</text>
+  <text x="825" y="780" class="p">先锁定 MIT EECS PhD → 只读取它关联的官网页面</text>
+  <text x="825" y="807" class="small">这样不会把别的学校、别的项目或本科页面混进答案</text>
+
+  <rect x="55" y="858" width="1490" height="52" rx="10" fill="rgba(30,41,59,.78)" stroke="#475569"/>
+  <text x="800" y="890" class="tag" fill="#f8fafc" text-anchor="middle">一句话总结：PostgreSQL 管“哪个版本是真的”，OpenSearch 管“快速找到”，WeKnora 管“官网具体怎么写”。</text>
 </svg>

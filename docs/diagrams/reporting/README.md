@@ -1,28 +1,30 @@
 # 汇报流程图
 
-1. `01-overall-architecture-flow.svg/png`：整体架构、MD 与 WeKnora 数据来源边界。
-2. `02-fast-router-principle.svg/png`：Fast Router 的方向判断、意图分层、OpenSearch 匹配和 Evidence Gate。
-3. `03-data-storage-architecture.svg/png`：PostgreSQL 权威层、OpenSearch 查询投影、WeKnora 网页证据层。
+1. `01-overall-architecture-flow.svg/png`：用两个真实问题说明 Markdown 快速路径和 WeKnora 细节路径。
+2. `02-fast-router-principle.svg/png`：把 Fast Router 解释成“问题分流员”，按用户想了解的深度选择路线。
+3. `03-data-storage-architecture.svg/png`：把数据存储解释成四个不同用途的“柜子”。
 
 ## 建议讲解顺序
 
 ### 图 1：整体架构
 
-1. 先看上半部分：上传 Markdown 后，Parser 一次提取目录、事实、上下文和 URL。
-2. 青色链路全部来自 MD，是 1 秒内快速检索的基础；琥珀色链路来自 URL 页面正文，是 WeKnora 深度证据。
-3. 在线查询默认先走 OpenSearch L1。只有用户明确问申请材料、课程细节、资格政策等内容，才按 L1 选定的 URL scope 调 WeKnora。
-4. 最终响应中 `matches/context` 来自 MD，`evidence` 才是 WeKnora 网页证据。
+1. 学校先提供一份 Markdown 资料，系统自动整理出学校介绍、专业、关键数字和官网链接。
+2. 青色代表 Markdown 里已经整理好的内容，查询快，适合回答“有没有这个专业”“学费多少”之类的常见问题。
+3. 黄色代表官网页面内容。只有用户继续问课程设置、申请材料等细节时，系统才让 WeKnora 阅读对应页面。
+4. 例如先问“MIT 有 Economics 本科专业吗”，从 Markdown 快速回答；再问“那课程设置呢”，才读取 14-1 Economics 对应的官网页面。
 
 ### 图 2：Fast Router
 
-1. 先解析学校和搜索方向，显式学校范围优先，未知学校不会默认成 MIT。
-2. QueryPlan 的优先级是 `detail > fact > discovery`，避免申请材料问题被 TOEFL/GRE 等事实词截断。
-3. OpenSearch 一次并行查目录、事实、来源和实体上下文；专业定位后，再按精确 `source_id` 收敛一次。
-4. discovery 或事实命中直接返回 L1；scope 模糊先反问；明确细节才进入 Scoped WeKnora。
+1. 可以把 Fast Router 理解成“问题分流员”，它本身不写长答案，只决定去哪里找资料。
+2. 第一步先确认用户在问哪所学校、哪个专业；如果说不清楚，就先反问，不能猜成 MIT。
+3. 第二步判断用户只是想了解学校或专业、询问一个明确数字，还是追问官网页面里的具体细节。
+4. 常见内容走 Markdown 快速资料；页面细节先锁定具体项目，再让 WeKnora 只读相关官网页面。
+5. 最后统一告诉 AI：找到了什么、依据是什么、还有什么没有找到，再由 AI 组织成自然回答。
 
 ### 图 3：数据存储
 
-1. PostgreSQL 保存权威版本、来源生命周期、事实状态和 WeKnora Job，是系统真源。
-2. OpenSearch 是面向查询的 L1 投影，热路径不查询 PostgreSQL。
-3. WeKnora 保存 URL 页面和 chunk，不保存目录主数据。
-4. 三层通过 `entry_id/fact_id -> source_id -> knowledge_id/chunk_id` 串联；OpenSearch 和 WeKnora 都可以从 PostgreSQL 控制面重建。
+1. 原始资料柜保存学校上传的 Markdown，方便以后重新处理和核对。
+2. PostgreSQL 是管理账本，记录当前应该使用哪个版本、每条信息来自哪里、官网导入是否成功。
+3. OpenSearch 是快速查找架，放常见问题需要的副本，用户提问时主要从这里快速找答案。
+4. WeKnora 是官网全文柜，保存申请材料、课程说明等网页正文，用于回答需要引用官网细节的问题。
+5. 一句话总结：PostgreSQL 管“哪个版本是真的”，OpenSearch 管“快速找到”，WeKnora 管“官网具体怎么写”。
