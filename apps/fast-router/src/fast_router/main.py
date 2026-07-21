@@ -107,7 +107,10 @@ def health() -> dict[str, Any]:
         "postgres": {"configured": bool(os.getenv("POSTGRES_DSN")), "version_cache_size": len(versions)},
         "opensearch": {"configured": bool(os.getenv("OPENSEARCH_URL")), "ready": retrieval_engine is not None},
         "weknora": {
-            "configured": bool(os.getenv("WEKNORA_BASE_URL") and os.getenv("WEKNORA_KNOWLEDGE_BASE_ID")),
+            "configured": bool(os.getenv("WEKNORA_BASE_URL")),
+            "routing_mode": "per_source_knowledge_base",
+            "template_knowledge_base_configured": bool(os.getenv("WEKNORA_KB_TEMPLATE_ID")),
+            "legacy_fallback_knowledge_base_configured": bool(os.getenv("WEKNORA_KNOWLEDGE_BASE_ID")),
             "scope_filter": "knowledge_ids",
             "worker_alive": bool(weknora_worker and weknora_worker.alive),
             "worker_iterations": weknora_worker.iterations if weknora_worker else 0,

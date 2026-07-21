@@ -29,8 +29,8 @@ OPENSEARCH_URL
 INGESTION_DATA_ROOT
 WEKNORA_BASE_URL
 WEKNORA_API_KEY
-WEKNORA_KNOWLEDGE_BASE_ID
 WEKNORA_KB_TEMPLATE_ID
+WEKNORA_KNOWLEDGE_BASE_ID (仅旧数据 fallback，正常多 KB 部署留空)
 WEKNORA_API_KEY_HEADER
 WEKNORA_SEARCH_TIMEOUT_SECONDS
 FAST_ROUTER_BASE_URL
@@ -38,7 +38,7 @@ FAST_ROUTER_TIMEOUT_MS
 TRACE_LOG_PATH
 ```
 
-真实密钥只放未跟踪的 `.env`。L1 可在未配置 WeKnora 时运行；L1+WeKnora 发布验收必须配置真实服务。
+真实密钥只放未跟踪的 `.env`。L1 可在未配置 WeKnora 时运行；L1+WeKnora 发布验收必须配置真实服务。正常检索从每条 source 读取实际 KB ID；模板 KB 只用于新建院校 KB 时复制配置，不是统一检索目标。
 
 宿主端口可通过 `POSTGRES_PORT/OPENSEARCH_PORT/FAST_ROUTER_PORT/MCP_PORT` 覆盖。Fast Router 和 MCP 的宿主监听地址可通过 `FAST_ROUTER_BIND_HOST/MCP_BIND_HOST` 覆盖，容器内部调用地址不变。
 

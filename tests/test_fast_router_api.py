@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -77,6 +78,24 @@ class FastRouterApiTests(unittest.TestCase):
         self.assertEqual(payload["matches"][0]["program_name"], "Economics")
         self.assertEqual(payload["context"]["primary_entities"][0]["display_label"], "14-1 Economics")
         self.assertEqual(set(payload["timings"]), {"total_ms", "l1_ms", "weknora_ms"})
+
+    def test_health_reports_multi_kb_weknora_without_legacy_default(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "WEKNORA_BASE_URL": "https://weknora.example/api/v1",
+                "WEKNORA_API_KEY": "secret",
+                "WEKNORA_KB_TEMPLATE_ID": "kb_template",
+            },
+            clear=False,
+        ):
+            os.environ.pop("WEKNORA_KNOWLEDGE_BASE_ID", None)
+            payload = self.client.get("/health").json()["weknora"]
+
+        self.assertTrue(payload["configured"])
+        self.assertEqual(payload["routing_mode"], "per_source_knowledge_base")
+        self.assertTrue(payload["template_knowledge_base_configured"])
+        self.assertFalse(payload["legacy_fallback_knowledge_base_configured"])
 
     def test_ingestion_upload_returns_202(self) -> None:
         response = self.client.post(

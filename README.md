@@ -64,8 +64,10 @@ L1 works without WeKnora. Copy `.env.example` to `.env` and set the external WeK
 ```text
 WEKNORA_BASE_URL
 WEKNORA_API_KEY
-WEKNORA_KNOWLEDGE_BASE_ID
+WEKNORA_KB_TEMPLATE_ID (optional configuration template for newly created school KBs)
 ```
+
+Retrieval is multi-KB: every current source carries its actual knowledge-base ID, and deep search groups sources by that ID. `WEKNORA_KNOWLEDGE_BASE_ID` is an optional legacy fallback only and should normally remain empty. A template KB supplies chunking, embedding, wiki, and indexing settings when a new university KB is created; its documents are not copied or searched as part of that operation.
 
 Without those values, detail requests return `mode=l1_l2` with `weknora_unavailable`; they do not silently answer from unrelated quick facts.
 
