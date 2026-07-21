@@ -6,7 +6,7 @@ L1 Markdown knowledge retrieval with optional scoped WeKnora evidence. The runti
 
 Requirements: Docker Desktop or Docker Engine with Docker Compose.
 
-This Compose stack is a local/MVP deployment and binds every published port to `127.0.0.1`. Do not expose Fast Router or its ingestion endpoints to an untrusted network without adding authentication, TLS, and production database/search credentials.
+This Compose stack binds every published port to `127.0.0.1` by default. PostgreSQL and OpenSearch always remain localhost-only. Fast Router and MCP Gateway can bind to a private VPN address through `FAST_ROUTER_BIND_HOST` and `MCP_BIND_HOST`. Do not expose the unauthenticated ingestion or MCP endpoints to the public Internet without authentication and TLS.
 
 ```bash
 docker compose up -d --build
@@ -29,6 +29,19 @@ curl http://127.0.0.1:8765/health
 ```
 
 The `bootstrap` container should show `Exited (0)`. Fast Router and Tool Gateway should be `healthy`.
+
+For access through a private Tailscale address, set the server address in `.env` and recreate only the two API services:
+
+```text
+FAST_ROUTER_BIND_HOST=100.74.163.113
+MCP_BIND_HOST=100.74.163.113
+```
+
+```bash
+docker compose up -d --force-recreate fast-router tool-gateway
+```
+
+Clients in the same tailnet can then use `http://100.74.163.113:8000` and `http://100.74.163.113:8765/mcp`.
 
 ## MCP
 

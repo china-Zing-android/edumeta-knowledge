@@ -2,6 +2,22 @@
 
 以下命令都在服务器的项目根目录执行。Compose 端口只绑定 `127.0.0.1`，因此不能直接从公网访问。
 
+如果客户端通过 Tailscale 访问服务器，在服务器 `.env` 中配置：
+
+```text
+FAST_ROUTER_BIND_HOST=100.74.163.113
+MCP_BIND_HOST=100.74.163.113
+```
+
+然后重新创建 API 服务：
+
+```bash
+docker compose up -d --force-recreate fast-router tool-gateway
+docker compose ps
+```
+
+PostgreSQL 和 OpenSearch 仍然只监听 `127.0.0.1`。不要在没有认证和 TLS 时把上述地址设置为公网接口或 `0.0.0.0`。
+
 ## 1. 健康检查
 
 ```bash

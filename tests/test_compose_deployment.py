@@ -25,6 +25,20 @@ def test_compose_bootstraps_data_before_router_and_starts_mcp_by_default() -> No
     assert services["tool-gateway"]["depends_on"]["fast-router"]["condition"] == "service_healthy"
 
 
+def test_only_api_services_have_configurable_private_bind_hosts() -> None:
+    payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
+    services = payload["services"]
+
+    assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    assert services["opensearch"]["ports"] == ["127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"]
+    assert services["fast-router"]["ports"] == [
+        "${FAST_ROUTER_BIND_HOST:-127.0.0.1}:${FAST_ROUTER_PORT:-8000}:8000"
+    ]
+    assert services["tool-gateway"]["ports"] == [
+        "${MCP_BIND_HOST:-127.0.0.1}:${MCP_PORT:-8765}:8765"
+    ]
+
+
 def test_fast_router_image_contains_bootstrap_inputs() -> None:
     dockerfile = (ROOT / "apps/fast-router/Dockerfile").read_text("utf-8")
 

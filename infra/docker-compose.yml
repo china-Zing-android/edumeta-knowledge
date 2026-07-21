@@ -84,7 +84,7 @@ services:
       - ingestion_data:/app/data/ingestions
       - ../data/traces:/app/data/traces
     ports:
-      - "127.0.0.1:${FAST_ROUTER_PORT:-8000}:8000"
+      - "${FAST_ROUTER_BIND_HOST:-127.0.0.1}:${FAST_ROUTER_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,7 +109,7 @@ services:
       FAST_ROUTER_BASE_URL: http://fast-router:8000
       FAST_ROUTER_TIMEOUT_MS: ${FAST_ROUTER_TIMEOUT_MS:-3500}
     ports:
-      - "127.0.0.1:${MCP_PORT:-8765}:8765"
+      - "${MCP_BIND_HOST:-127.0.0.1}:${MCP_PORT:-8765}:8765"
     depends_on:
       fast-router:
         condition: service_healthy
