@@ -1,4 +1,4 @@
-Status: done
+Status: review
 
 # Batch University Markdown Ingestion Handoff
 
@@ -38,6 +38,14 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 - Fake HTTP lifecycle verifies create -> published -> repeated upload unchanged.
 - No source file exceeds GitHub's per-file size limit; no credential pattern was found.
 - Pre-upgrade comparison: 210 direct technical passes, 135 newly passing after generic Parser upgrades, 16 conditional reviews, and 78 blocked.
+- Live post-ingestion student QA against `http://100.74.163.113:8000`: 30 cases x 5 runs, 22/30 strict pass, no nondeterminism, L1 HTTP p95 153.490 ms. Accuracy and source-URL quality do not pass release criteria; detailed report at `qa/reports/live-batch-student-qa-2026-07-24.md`.
+
+## Current Risks
+
+- Generic Markdown Parser accepts summary/category/policy rows as catalog entries in some schools.
+- URL canonicalization can concatenate a base domain with an already host-like URL, yielding unusable double-domain source URLs.
+- Retrieval ranking can return a minor, joint degree, or unrelated entry for a requested degree level.
+- Batch `passed` remains a technical ingestion status, not MIT-level content acceptance.
 
 ## Runtime Command
 

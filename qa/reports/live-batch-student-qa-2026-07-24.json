@@ -1,0 +1,298 @@
+{
+  "status": "failed",
+  "cases": 30,
+  "runs": 5,
+  "failures": [
+    {
+      "run": 1,
+      "case_id": "student_q12_princeton_cs_phd",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'PhD', 'level': 'graduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q13_cornell_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q14_melbourne_accounting",
+      "failures": [
+        "no match satisfies {'program_name': 'Accounting', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q16_monash_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q17_mcgill_agricultural_economics",
+      "failures": [
+        "no match satisfies {'program_name': 'Agricultural Economics Major', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q18_toronto_cs_data_science",
+      "failures": [
+        "no match satisfies {'program_name_contains': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q22_cambridge_cs",
+      "failures": [
+        "mode=not_found expected=l1",
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 1,
+      "case_id": "student_q30_nus_nonexistent",
+      "failures": [
+        "mode=l1 expected=not_found"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q12_princeton_cs_phd",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'PhD', 'level': 'graduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q13_cornell_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q14_melbourne_accounting",
+      "failures": [
+        "no match satisfies {'program_name': 'Accounting', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q16_monash_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q17_mcgill_agricultural_economics",
+      "failures": [
+        "no match satisfies {'program_name': 'Agricultural Economics Major', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q18_toronto_cs_data_science",
+      "failures": [
+        "no match satisfies {'program_name_contains': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q22_cambridge_cs",
+      "failures": [
+        "mode=not_found expected=l1",
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 2,
+      "case_id": "student_q30_nus_nonexistent",
+      "failures": [
+        "mode=l1 expected=not_found"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q12_princeton_cs_phd",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'PhD', 'level': 'graduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q13_cornell_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q14_melbourne_accounting",
+      "failures": [
+        "no match satisfies {'program_name': 'Accounting', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q16_monash_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q17_mcgill_agricultural_economics",
+      "failures": [
+        "no match satisfies {'program_name': 'Agricultural Economics Major', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q18_toronto_cs_data_science",
+      "failures": [
+        "no match satisfies {'program_name_contains': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q22_cambridge_cs",
+      "failures": [
+        "mode=not_found expected=l1",
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 3,
+      "case_id": "student_q30_nus_nonexistent",
+      "failures": [
+        "mode=l1 expected=not_found"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q12_princeton_cs_phd",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'PhD', 'level': 'graduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q13_cornell_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q14_melbourne_accounting",
+      "failures": [
+        "no match satisfies {'program_name': 'Accounting', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q16_monash_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q17_mcgill_agricultural_economics",
+      "failures": [
+        "no match satisfies {'program_name': 'Agricultural Economics Major', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q18_toronto_cs_data_science",
+      "failures": [
+        "no match satisfies {'program_name_contains': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q22_cambridge_cs",
+      "failures": [
+        "mode=not_found expected=l1",
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 4,
+      "case_id": "student_q30_nus_nonexistent",
+      "failures": [
+        "mode=l1 expected=not_found"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q12_princeton_cs_phd",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'PhD', 'level': 'graduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q13_cornell_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q14_melbourne_accounting",
+      "failures": [
+        "no match satisfies {'program_name': 'Accounting', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q16_monash_cs_undergraduate",
+      "failures": [
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q17_mcgill_agricultural_economics",
+      "failures": [
+        "no match satisfies {'program_name': 'Agricultural Economics Major', 'degree_level': 'SB', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q18_toronto_cs_data_science",
+      "failures": [
+        "no match satisfies {'program_name_contains': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q22_cambridge_cs",
+      "failures": [
+        "mode=not_found expected=l1",
+        "no match satisfies {'program_name': 'Computer Science', 'level': 'undergraduate'}"
+      ]
+    },
+    {
+      "run": 5,
+      "case_id": "student_q30_nus_nonexistent",
+      "failures": [
+        "mode=l1 expected=not_found"
+      ]
+    }
+  ],
+  "nondeterministic_cases": [],
+  "http_l1_p50_ms": 113.486,
+  "http_l1_p95_ms": 153.49,
+  "http_l1_l2_p95_ms": null,
+  "http_upward_p95_ms": 259.206,
+  "http_range_p95_ms": 139.092
+}
