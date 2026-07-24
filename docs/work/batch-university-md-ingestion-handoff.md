@@ -28,6 +28,7 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 - Read-only raw-data bind mount and persistent `batch_import_state` Docker volume.
 - Parser support for unnumbered catalog tables, relative URLs, table school/department columns, localized dates, and duplicate structured entries.
 - Dataset README and operations runbook.
+- Per-university pre/post Parser compatibility results and a Chinese ingestion-readiness report separating technical ingestion from MIT-level release acceptance.
 
 ## Verification
 
@@ -36,6 +37,7 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 - Dry-run selection with country/limit returns the expected passed IDs.
 - Fake HTTP lifecycle verifies create -> published -> repeated upload unchanged.
 - No source file exceeds GitHub's per-file size limit; no credential pattern was found.
+- Pre-upgrade comparison: 210 direct technical passes, 135 newly passing after generic Parser upgrades, 16 conditional reviews, and 78 blocked.
 
 ## Runtime Command
 

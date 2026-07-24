@@ -30,6 +30,7 @@ Singapore Management University -> sg_smu
 | `<country>/*.md` | 原始院校 Markdown，禁止批量改写。 |
 | `manifest.jsonl` | 稳定学校 ID、国家、名称、别名、文件哈希和重复归并结果。 |
 | `preflight-results.jsonl` | Parser、schema、交叉引用和最低目录数量闸门结果。 |
+| `parser-compatibility-results.jsonl` | 逐校记录旧 Parser 与当前 Parser 的对照结果，并区分直接兼容、升级后兼容、条件审核和禁止导入。 |
 | `README.md` | 批次结构、限制和运行方法。 |
 
 ## 当前质量闸门
@@ -47,6 +48,8 @@ failed: 78
 - `failed`：缺少可识别专业目录、捕获日期或其他必要结构，默认不导入。
 
 一键导入只选择 `passed` 且文件 SHA-256 与 preflight 完全一致的学校。修改任何 Markdown 后必须重新生成 manifest 并重新 preflight。
+
+`passed` 只表示 L1 技术链路可入库，不表示已经达到 MIT 的目录对账、事实提取和 QA 完整度。详细的人类可读分级结论见 `docs/operations/university-ingestion-readiness-2026-07.md`。
 
 ## 一键导入
 
