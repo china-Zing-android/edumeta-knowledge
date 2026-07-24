@@ -82,3 +82,16 @@ docker compose down
 Use `docker compose down -v` only when the local PostgreSQL and OpenSearch data may be deleted.
 
 See `qa/manual/md-first-l1-weknora-qa-guide.md` for manual QA and `docs/operations/data-ingestion-runbook.md` for incremental Markdown ingestion.
+
+## Batch University Markdown Import
+
+The repository includes a country-organized 2026-07 batch under `data/raw-md/universities/`: 448 source documents, 439 enabled universities after duplicate resolution, and 345 currently passing the offline publication gate.
+
+With Compose running and `WEKNORA_IMPORT_ENABLED=false`, preview and import a small batch through the Fast Router container:
+
+```bash
+./scripts/import_universities.sh --dry-run --country US --limit 5
+./scripts/import_universities.sh --country US --limit 5
+```
+
+The command is sequential and resumable. It imports only records whose manifest hash matches a `passed` preflight result. See `docs/operations/batch-university-md-ingestion.md` for validation, idempotency, and full-batch procedures.

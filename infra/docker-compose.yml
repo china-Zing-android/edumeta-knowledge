@@ -83,6 +83,8 @@ services:
       TRACE_LOG_PATH: ${TRACE_LOG_PATH:-/app/data/traces/retrieval.jsonl}
     volumes:
       - ingestion_data:/app/data/ingestions
+      - batch_import_state:/app/data/import-state
+      - ../data/raw-md/universities:/app/data/raw-md/universities:ro
       - ../data/traces:/app/data/traces
     ports:
       - "${FAST_ROUTER_BIND_HOST:-127.0.0.1}:${FAST_ROUTER_PORT:-8000}:8000"
@@ -124,3 +126,4 @@ volumes:
   postgres_data:
   opensearch_data:
   ingestion_data:
+  batch_import_state:

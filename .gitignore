@@ -15,5 +15,6 @@ dist/
 apps/tool-gateway/apps/
 
 data/traces/*.jsonl
+data/import-state/
 qa/reports/*.json
 qa/reports/*.log

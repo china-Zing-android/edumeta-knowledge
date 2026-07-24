@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 from .disciplines import enrich_catalog_entries
 from .entity_contexts import build_entity_contexts
@@ -25,7 +26,15 @@ URL_PATTERN = re.compile(
 )
 
 
-def _clean_url(value: str) -> str | None:
+def _clean_url(value: str, base_url: str | None = None) -> str | None:
+    relative_match = re.search(r"(?<![\w])/[a-z0-9][^\s`|)>]*", value, re.IGNORECASE)
+    if relative_match and base_url:
+        candidate = urljoin(base_url, relative_match.group(0).rstrip(".,;:]}\""))
+        try:
+            canonical = canonicalize_url(candidate)
+        except ValueError:
+            return None
+        return canonical if is_valid_http_url(canonical) else None
     match = URL_PATTERN.search(value)
     if not match:
         return None
@@ -37,6 +46,14 @@ def _clean_url(value: str) -> str | None:
     except ValueError:
         return None
     return canonical if is_valid_http_url(canonical) else None
+
+
+def _document_base_url(text: str) -> str | None:
+    for line in text.splitlines()[:180]:
+        candidate = _clean_url(line)
+        if candidate:
+            return candidate
+    return None
 
 
 def _university_name(text: str, university_id: str) -> str:
@@ -70,12 +87,12 @@ def _degree_and_level(context: str) -> tuple[str, str]:
     return "Other", "undergraduate"
 
 
-def _nearest_source_url(lines: list[str], table_index: int) -> str | None:
+def _nearest_source_url(lines: list[str], table_index: int, base_url: str | None = None) -> str | None:
     for index in range(table_index - 1, max(-1, table_index - 140), -1):
         line = lines[index]
         if index != table_index - 1 and line.startswith("## "):
             break
-        candidate = _clean_url(line)
+        candidate = _clean_url(line, base_url)
         if candidate:
             return candidate
     return None
@@ -92,6 +109,7 @@ def _program_column(headers: list[str]) -> int | None:
 def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
     text = path.read_text("utf-8")
     lines = text.splitlines()
+    document_base_url = _document_base_url(text)
     capture_date = extract_capture_date(text)
     if capture_date == "unknown":
         raise ValueError("Deep v2 Markdown must include a data capture date")
@@ -117,7 +135,7 @@ def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
         if len(rows) < 2:
             continue
         headers = [cleanup_markdown(value) for value in rows[0]]
-        if not headers or headers[0].strip() != "#":
+        if not headers:
             continue
         program_index = _program_column(headers)
         if program_index is None:
@@ -125,10 +143,12 @@ def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
         url_index = next((i for i, header in enumerate(headers) if "url" in header.lower() or "source" in header.lower()), None)
         code_index = next((i for i, header in enumerate(headers) if "代码" in header or "code" in header.lower()), None)
         degree_index = next((i for i, header in enumerate(headers) if "学位" in header or "type" in header.lower()), None)
+        school_index = next((i for i, header in enumerate(headers) if header.lower() in {"school", "faculty", "college", "学院"}), None)
+        department_index = next((i for i, header in enumerate(headers) if header.lower() in {"department", "dept", "系", "院系"}), None)
         context_parts = [heading_path[key] for key in sorted(heading_path)]
         school = heading_path.get(4) or heading_path.get(3) or university_name
         department_heading = heading_path.get(5) or school
-        default_source_url = _nearest_source_url(lines, index)
+        default_source_url = _nearest_source_url(lines, index, document_base_url)
         table_added = 0
 
         for cells in rows[1:]:
@@ -137,13 +157,15 @@ def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
             program_name = cleanup_markdown(cells[program_index])
             if not program_name or program_name.lower() in {"n/a", "none", "total", "合计"}:
                 continue
-            source_url = _clean_url(cells[url_index]) if url_index is not None and url_index < len(cells) else default_source_url
+            source_url = _clean_url(cells[url_index], document_base_url) if url_index is not None and url_index < len(cells) else default_source_url
             if not source_url:
                 continue
             course_code = cleanup_markdown(cells[code_index]) if code_index is not None and code_index < len(cells) else None
             row_degree = cleanup_markdown(cells[degree_index]) if degree_index is not None and degree_index < len(cells) else ""
+            row_school = cleanup_markdown(cells[school_index]) if school_index is not None and school_index < len(cells) else school
+            row_department = cleanup_markdown(cells[department_index]) if department_index is not None and department_index < len(cells) else department_heading
             degree_level, level = _degree_and_level(" ".join([*context_parts, " ".join(headers), program_name, row_degree]))
-            entry_id = stable_id("ent", university_id, level, degree_level, course_code or "", program_name, "")
+            entry_id = stable_id("ent", university_id, level, degree_level, course_code or "", program_name, row_degree or "")
             if entry_id in seen_entry_ids:
                 continue
             seen_entry_ids.add(entry_id)
@@ -152,8 +174,8 @@ def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
                 source_registry_by_id,
                 url_manifest_by_id,
                 university_id,
-                school,
-                department_heading,
+                row_school or school,
+                row_department or department_heading,
                 level,
                 degree_level,
                 program_name,

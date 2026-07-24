@@ -302,6 +302,11 @@ def parse_structured_markdown(university_id: str, path: Path) -> ParseResult:
     if not catalog_entries:
         raise StructuredMarkdownContractError("Structured Markdown catalog table produced zero catalog entries.")
 
+    # The same program can appear in multiple source-oriented tables. Stable
+    # entry IDs represent the entity once; source_registry/url_manifest retain
+    # every source-to-entry link.
+    catalog_entries = list({entry["entry_id"]: entry for entry in catalog_entries}.values())
+
     unclassified_urls = add_markdown_prose_sources(
         text,
         source_registry_by_id,

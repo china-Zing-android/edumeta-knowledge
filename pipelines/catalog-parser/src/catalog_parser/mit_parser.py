@@ -39,7 +39,14 @@ from .markdown_sources import slug, stable_id  # noqa: E402,F401
 
 
 def extract_capture_date(text: str) -> str:
-    match = re.search(r"\*\*Data capture date\*\*:\s*(\d{4}-\d{2}-\d{2})", text)
+    head = "\n".join(text.splitlines()[:80])
+    match = re.search(
+        r"(?:Data capture date|Capture date|生成日期|采集日期|数据捕获日期)[^\n\d]*(20\d{2}-\d{2}-\d{2})",
+        head,
+        re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", head)
     return match.group(1) if match else "unknown"
 
 

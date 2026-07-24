@@ -51,8 +51,17 @@ def test_fast_router_image_contains_bootstrap_inputs() -> None:
         assert expected in dockerfile
 
 
+def test_batch_markdown_is_mounted_read_only_and_state_is_persistent() -> None:
+    payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
+    volumes = payload["services"]["fast-router"]["volumes"]
+
+    assert "../data/raw-md/universities:/app/data/raw-md/universities:ro" in volumes
+    assert "batch_import_state:/app/data/import-state" in volumes
+    assert "batch_import_state" in payload["volumes"]
+
+
 def test_docker_build_context_excludes_secrets_and_local_artifacts() -> None:
     patterns = set((ROOT / ".dockerignore").read_text("utf-8").splitlines())
 
-    for expected in (".env", ".env.*", ".venv/", "**/node_modules/", "data/traces/"):
+    for expected in (".env", ".env.*", ".venv/", "**/node_modules/", "data/traces/", "data/raw-md/universities/"):
         assert expected in patterns
