@@ -1,13 +1,28 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fast_router.ingestion import resolve_weknora_kb_request
 from fast_router.weknora_worker import WeknoraJobWorker
 
 
 class WeknoraKBRoutingTests(unittest.TestCase):
+    def test_worker_is_disabled_by_import_gate_without_disabling_search_configuration(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "POSTGRES_DSN": "postgresql://example",
+                "OPENSEARCH_URL": "http://opensearch:9200",
+                "WEKNORA_BASE_URL": "https://weknora.example/api/v1",
+                "WEKNORA_IMPORT_ENABLED": "false",
+            },
+            clear=False,
+        ):
+            self.assertIsNone(WeknoraJobWorker.from_env())
+
     def test_worker_claim_order_is_fair_between_new_imports_and_polls(self) -> None:
         source = Path("apps/fast-router/src/fast_router/weknora_worker.py").read_text("utf-8")
 

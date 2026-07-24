@@ -12,7 +12,7 @@ from .opensearch_retrieval import CurrentVersionMap, OpenSearchRetrievalClient
 from .retrieval import RetrievalEngine
 from .tracing import write_trace
 from .weknora_client import WeknoraSearchClient
-from .weknora_worker import WeknoraJobWorker
+from .weknora_worker import WeknoraJobWorker, weknora_import_enabled
 
 
 class RetrievalContext(BaseModel):
@@ -109,6 +109,7 @@ def health() -> dict[str, Any]:
         "weknora": {
             "configured": bool(os.getenv("WEKNORA_BASE_URL")),
             "routing_mode": "per_source_knowledge_base",
+            "import_enabled": weknora_import_enabled(),
             "template_knowledge_base_configured": bool(os.getenv("WEKNORA_KB_TEMPLATE_ID")),
             "legacy_fallback_knowledge_base_configured": bool(os.getenv("WEKNORA_KNOWLEDGE_BASE_ID")),
             "scope_filter": "knowledge_ids",

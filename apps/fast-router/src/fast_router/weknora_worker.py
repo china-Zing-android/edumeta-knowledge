@@ -13,6 +13,10 @@ import httpx
 from catalog_parser.weknora_importer import RealWeknoraUrlImporter, WeknoraImportConfig
 
 
+def weknora_import_enabled() -> bool:
+    return os.getenv("WEKNORA_IMPORT_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
 class WeknoraJobWorker:
     def __init__(
         self,
@@ -41,6 +45,8 @@ class WeknoraJobWorker:
 
     @classmethod
     def from_env(cls) -> "WeknoraJobWorker | None":
+        if not weknora_import_enabled():
+            return None
         required = [os.getenv("POSTGRES_DSN"), os.getenv("OPENSEARCH_URL"), os.getenv("WEKNORA_BASE_URL")]
         if not all(required):
             return None

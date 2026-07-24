@@ -69,6 +69,8 @@ WEKNORA_KB_TEMPLATE_ID (optional configuration template for newly created school
 
 Retrieval is multi-KB: every current source carries its actual knowledge-base ID, and deep search groups sources by that ID. `WEKNORA_KNOWLEDGE_BASE_ID` is an optional legacy fallback only and should normally remain empty. A template KB supplies chunking, embedding, wiki, and indexing settings when a new university KB is created; its documents are not copied or searched as part of that operation.
 
+Set `WEKNORA_IMPORT_ENABLED=false` to pause URL uploads while keeping Markdown parsing, URL extraction, PostgreSQL/OpenSearch publication, and queued import jobs active. Set it back to `true` and recreate Fast Router to resume the backlog without re-uploading Markdown.
+
 Without those values, detail requests return `mode=l1_l2` with `weknora_unavailable`; they do not silently answer from unrelated quick facts.
 
 ## Stop

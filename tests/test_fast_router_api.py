@@ -97,6 +97,20 @@ class FastRouterApiTests(unittest.TestCase):
         self.assertTrue(payload["template_knowledge_base_configured"])
         self.assertFalse(payload["legacy_fallback_knowledge_base_configured"])
 
+    def test_health_reports_paused_weknora_import_gate(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "WEKNORA_BASE_URL": "https://weknora.example/api/v1",
+                "WEKNORA_IMPORT_ENABLED": "false",
+            },
+            clear=False,
+        ):
+            payload = self.client.get("/health").json()["weknora"]
+
+        self.assertFalse(payload["import_enabled"])
+        self.assertFalse(payload["worker_alive"])
+
     def test_ingestion_upload_returns_202(self) -> None:
         response = self.client.post(
             "/v1/ingestions",

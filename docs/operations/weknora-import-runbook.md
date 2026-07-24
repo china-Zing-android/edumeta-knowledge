@@ -4,6 +4,32 @@ Fast Router 内置 PG job worker。上传成功后，`weknora_import_jobs` 使�
 
 必要配置：`WEKNORA_BASE_URL`、`WEKNORA_API_KEY`、`WEKNORA_KB_TEMPLATE_ID`。`WEKNORA_KNOWLEDGE_BASE_ID` 仅作旧数据 fallback。每校创建/复用独立 KB 和 `university:{university_id}` tag；每个 URL job 使用自身 `knowledge_base_id`。
 
+## 暂停 URL 导入闸门
+
+在 `.env` 中设置：
+
+```text
+WEKNORA_IMPORT_ENABLED=false
+```
+
+重建 Fast Router 后，MD 解析、URL 提取、PostgreSQL staging/current、OpenSearch L1 发布和增量版本切换都正常执行；URL import job 继续记录为 `queued`，但 Worker 不领取任务，不向 WeKnora 上传 URL。已有 `success` evidence 仍可用于检索。
+
+恢复时改为：
+
+```text
+WEKNORA_IMPORT_ENABLED=true
+```
+
+然后执行：
+
+```bash
+docker compose --env-file .env up -d --force-recreate fast-router
+```
+
+Worker 会自动继续积压的 `queued` job，不需要重新上传 Markdown。可通过 `/health` 的 `weknora.import_enabled` 和 `weknora.worker_alive` 检查闸门状态。
+
+该开关控制本地 Worker 是否领取新任务，不会删除历史 evidence，也不会撤销已经提交到 WeKnora 远端、正在处理中的单个任务。关闭闸门并重建服务后，新产生和尚未领取的任务会保持 `queued`。
+
 检索使用 `knowledge_ids` 做服务端精确 scope。部署实测表明同时发送 `knowledge_ids` 与 `tag_ids` 会在当前远端版本返回空结果，因此已有 knowledge ID 时只发送 knowledge scope，tag 作为导入治理与无文档 ID 时的后备能力。
 
 状态检查：

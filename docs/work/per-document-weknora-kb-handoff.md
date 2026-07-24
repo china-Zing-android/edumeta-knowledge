@@ -15,6 +15,7 @@ Move from one global WeKnora KB to one current KB per university full-snapshot M
 - Each source and import job carries its actual KB ID.
 - `WEKNORA_KNOWLEDGE_BASE_ID` is legacy fallback only and is not required for normal multi-KB routing.
 - `WEKNORA_KB_TEMPLATE_ID` optionally supplies configuration for newly created university KBs; template documents are not copied or searched.
+- `WEKNORA_IMPORT_ENABLED=false` pauses the URL worker while preserving URL extraction, L1 publication, and queued jobs; setting it back to `true` resumes the backlog without another MD upload.
 - WeKnora search groups scoped sources by KB ID; no global cross-KB search.
 - MIT target KB: `1b91fcff-ce72-4e97-9de0-f23a8ba419d9`.
 - Old KB content is retained and not deleted.
@@ -94,7 +95,7 @@ Cross-university HTTP: 9 cases x 5 runs passed
 MCP upward smoke: physical-science query returned caltech, duke, mit
 MIT new-KB scoped search: 3 evidence chunks returned from Course 6-3 knowledge ID
 Compose: postgres/opensearch/fast-router/tool-gateway healthy
-Multi-KB configuration and health semantics: 21 focused tests passed
+Multi-KB configuration, import gate, and health semantics: 23 focused tests passed
 ```
 
 Current remote state at the last runtime gate:
