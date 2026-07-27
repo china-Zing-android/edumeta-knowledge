@@ -4,12 +4,18 @@
 
 ## 使用方法
 
+部署新质量门禁后，优先使用保持相同 30 个问题、但把被隔离院校改为“应明确拒答”的后置验收题集：
+
 ```bash
-.venv/bin/python scripts/retrieval_benchmark.py \
-  --base-url http://100.74.163.113:8000 \
-  --cases qa/live-batch-student-qa-2026-07-24.jsonl \
-  --runs 5
+docker compose exec -T fast-router \
+  python /app/scripts/retrieval_benchmark.py \
+  --base-url http://127.0.0.1:8000 \
+  --cases /app/qa/live-batch-student-qa-post-audit-2026-07-27.jsonl \
+  --runs 5 \
+  > qa/reports/live-batch-student-qa-post-audit-server.json
 ```
+
+原始题集 `qa/live-batch-student-qa-2026-07-24.jsonl` 保留不变，用于复现修复前的 `22/30` 基线。后置题集的问题文本完全相同；只有 Princeton、墨尔本大学、多伦多大学三题的预期改为 `not_found`，因为这些学校的当前 Markdown 未通过完整度门禁，部署时应被隔离而不是继续返回不可靠项目。
 
 每题都以真实学生可能使用的表达编写。自动检查返回模式、学校/项目/学位层级、稳定性及 HTTP 延迟；人工评审还必须检查项目名不是统计项、来源 URL 不畸形且确实支持该项目。
 

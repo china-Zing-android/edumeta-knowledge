@@ -7,6 +7,7 @@ from typing import Any
 
 from catalog_parser.disciplines import enrich_catalog_entries
 from catalog_parser.entity_contexts import build_entity_contexts
+from catalog_parser.quality_rules import QUALITY_RULESET_VERSION
 
 
 @dataclass(frozen=True)
@@ -194,28 +195,27 @@ def publish_school(
     opensearch_url: str,
     *,
     university_metadata: dict[str, Any] | None = None,
+    activate: bool = True,
+    client: Any | None = None,
+    bulk_writer: Any | None = None,
 ) -> dict[str, Any]:
     plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
-    try:
-        from opensearchpy import OpenSearch, helpers
-    except ImportError as exc:
-        raise RuntimeError("opensearch-py is required for OpenSearch publishing") from exc
-
-    client = OpenSearch(opensearch_url)
+    if client is None or bulk_writer is None:
+        try:
+            from opensearchpy import OpenSearch, helpers
+        except ImportError as exc:
+            raise RuntimeError("opensearch-py is required for OpenSearch publishing") from exc
+        client = client or OpenSearch(opensearch_url)
+        bulk_writer = bulk_writer or (
+            lambda target, actions: helpers.bulk(target, actions, raise_on_error=False)
+        )
     published: dict[str, Any] = {}
     for entity, item in plan.items():
         spec: IndexSpec = item["spec"]
         _ensure_index_and_alias(client, item)
         if entity in {"universities", "catalog_entries", "entity_contexts"}:
-            client.update_by_query(
-                index=item["alias"],
-                body={
-                    "script": {"source": "ctx._source.is_current = false", "lang": "painless"},
-                    "query": {"term": {"university_id": university_id}},
-                },
-                conflicts="proceed",
-                refresh=True,
-            )
+            for record in item["records"]:
+                record["is_current"] = False
         client.delete_by_query(
             index=item["write_index"],
             body={"query": {"bool": {"filter": [
@@ -225,10 +225,9 @@ def publish_school(
             conflicts="proceed",
             refresh=True,
         )
-        ok_count, errors = helpers.bulk(
+        ok_count, errors = bulk_writer(
             client,
             bulk_actions(item["write_index"], spec.id_field, item["records"]),
-            raise_on_error=False,
         )
         if errors:
             raise RuntimeError(f"OpenSearch bulk indexing failed for {entity}: {errors[:3]}")
@@ -248,4 +247,157 @@ def publish_school(
             "write_index": item["write_index"],
             "dataset_version": item["dataset_version"],
         }
-    return {"mode": "opensearch", "university_id": university_id, "indexes": published, "status": "published"}
+    if activate:
+        activate_school_documents(client, plan, university_id)
+    return {
+        "mode": "opensearch",
+        "university_id": university_id,
+        "indexes": published,
+        "status": "published" if activate else "staged",
+    }
+
+
+def activate_school_documents(client: Any, plan: dict[str, dict[str, Any]], university_id: str) -> None:
+    for entity in ("universities", "catalog_entries", "entity_contexts"):
+        item = plan[entity]
+        dataset_version = item["dataset_version"]
+        client.update_by_query(
+            index=item["alias"],
+            body={
+                "script": {"source": "ctx._source.is_current = true", "lang": "painless"},
+                "query": {"bool": {"filter": [
+                    {"term": {"university_id": university_id}},
+                    {"term": {"dataset_version": dataset_version}},
+                ]}},
+            },
+            conflicts="proceed",
+            refresh=True,
+        )
+        client.update_by_query(
+            index=item["alias"],
+            body={
+                "script": {"source": "ctx._source.is_current = false", "lang": "painless"},
+                "query": {"bool": {
+                    "filter": [{"term": {"university_id": university_id}}],
+                    "must_not": [{"term": {"dataset_version": dataset_version}}],
+                }},
+            },
+            conflicts="proceed",
+            refresh=True,
+        )
+
+
+def activate_published_school(
+    data_dir: Path,
+    university_id: str,
+    opensearch_url: str,
+    *,
+    university_metadata: dict[str, Any] | None = None,
+    client: Any | None = None,
+) -> None:
+    plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
+    if client is None:
+        try:
+            from opensearchpy import OpenSearch
+        except ImportError as exc:
+            raise RuntimeError("opensearch-py is required for OpenSearch activation") from exc
+        client = OpenSearch(opensearch_url)
+    activate_school_documents(client, plan, university_id)
+
+
+def audit_staged_school(
+    data_dir: Path,
+    university_id: str,
+    opensearch_url: str,
+    *,
+    university_metadata: dict[str, Any] | None = None,
+    client: Any | None = None,
+    max_probes: int = 5,
+) -> dict[str, Any]:
+    plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
+    if client is None:
+        try:
+            from opensearchpy import OpenSearch
+        except ImportError as exc:
+            raise RuntimeError("opensearch-py is required for OpenSearch audit") from exc
+        client = OpenSearch(opensearch_url)
+
+    catalog_item = plan["catalog_entries"]
+    selected: list[dict[str, Any]] = []
+    seen_degrees: set[str] = set()
+    for row in sorted(catalog_item["records"], key=lambda item: (str(item.get("degree_level")), str(item.get("program_name")))):
+        degree = str(row.get("degree_level") or "")
+        if degree in seen_degrees and len(selected) < max_probes:
+            continue
+        selected.append(row)
+        seen_degrees.add(degree)
+        if len(selected) >= max_probes:
+            break
+    if not selected:
+        selected = catalog_item["records"][:max_probes]
+
+    probe_results: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for row in selected:
+        filters = [
+            {"term": {"university_id": university_id}},
+            {"term": {"dataset_version": catalog_item["dataset_version"]}},
+            {"term": {"status": "active"}},
+            {"term": {"level": row.get("level")}},
+            {"term": {"degree_level": row.get("degree_level")}},
+        ]
+        response = client.search(index=catalog_item["alias"], body={
+            "size": 1,
+            "track_total_hits": False,
+            "query": {"bool": {
+                "filter": filters,
+                "should": [
+                    {"term": {"entry_id": {"value": row["entry_id"], "boost": 50}}},
+                    {"match_phrase": {"program_name": {"query": row["program_name"], "boost": 10}}},
+                ],
+                "minimum_should_match": 1,
+            }},
+        })
+        hits = response.get("hits", {}).get("hits", [])
+        actual_id = (hits[0].get("_source") or {}).get("entry_id") if hits else None
+        passed = actual_id == row["entry_id"]
+        result = {"query": row["program_name"], "expected_entry_id": row["entry_id"], "actual_entry_id": actual_id, "passed": passed}
+        probe_results.append(result)
+        if not passed:
+            failures.append(result)
+
+    negative_response = client.search(index=catalog_item["alias"], body={
+        "size": 1,
+        "track_total_hits": False,
+        "query": {"bool": {
+            "filter": [
+                {"term": {"university_id": university_id}},
+                {"term": {"dataset_version": catalog_item["dataset_version"]}},
+            ],
+            "must": [{"match_phrase": {"program_name": "__edumeta_nonexistent_program__"}}],
+        }},
+    })
+    negative_hits = negative_response.get("hits", {}).get("hits", [])
+    if negative_hits:
+        failures.append({"query": "__edumeta_nonexistent_program__", "reason": "negative_probe_returned_match"})
+
+    checks = {
+        "retrieval_regression": {
+            "status": "failed" if failures else "passed",
+            "probe_count": len(probe_results) + 1,
+            "probes": probe_results,
+            "negative_probe_passed": not negative_hits,
+            "failures": failures,
+        }
+    }
+    return {
+        "audit_status": "failed" if failures else "passed",
+        "audit_version": QUALITY_RULESET_VERSION,
+        "matched_rule_ids": ["RET-SCOPE-001"] if failures else [],
+        "checks": checks,
+        "failures": ["retrieval_regression"] if failures else [],
+        "warnings": [],
+        "record_ids": [row["entry_id"] for row in selected],
+        "before_counts": {},
+        "after_counts": {name: item["count"] for name, item in plan.items()},
+    }

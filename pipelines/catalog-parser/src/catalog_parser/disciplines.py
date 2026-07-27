@@ -67,20 +67,27 @@ def _contains_alias(text: str, alias: str) -> bool:
 
 
 def classify_catalog_entry(entry: dict[str, Any]) -> list[str]:
-    text = _normalized_text(
+    primary_text = _normalized_text(
         " ".join(
             str(entry.get(key) or "")
-            for key in ("program_name", "canonical_program_name", "department", "school", "search_text")
+            for key in ("program_name", "canonical_program_name")
         )
         + " "
-        + " ".join(str(value) for value in entry.get("topics") or [])
+        + " ".join(str(value) for value in entry.get("aliases") or [])
     )
-    matches = [
-        definition.discipline_id
-        for definition in DISCIPLINES
-        if definition.discipline_id != "other"
-        and any(_contains_alias(text, alias) for alias in definition.aliases)
-    ]
+    secondary_text = _normalized_text(
+        " ".join(str(entry.get(key) or "") for key in ("department", "school"))
+    )
+
+    def matches_for(text: str) -> list[str]:
+        return [
+            definition.discipline_id
+            for definition in DISCIPLINES
+            if definition.discipline_id != "other"
+            and any(_contains_alias(text, alias) for alias in definition.aliases)
+        ]
+
+    matches = matches_for(primary_text) or matches_for(secondary_text)
     return matches or ["other"]
 
 

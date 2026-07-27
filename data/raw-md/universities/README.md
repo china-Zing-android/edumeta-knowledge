@@ -29,7 +29,7 @@ Singapore Management University -> sg_smu
 |---|---|
 | `<country>/*.md` | 原始院校 Markdown，禁止批量改写。 |
 | `manifest.jsonl` | 稳定学校 ID、国家、名称、别名、文件哈希和重复归并结果。 |
-| `preflight-results.jsonl` | Parser、schema、交叉引用和最低目录数量闸门结果。 |
+| `preflight-results.jsonl` | Parser、schema、交叉引用、五类质量审计和复核/阻断结果。 |
 | `parser-compatibility-results.jsonl` | 逐校记录旧 Parser 与当前 Parser 的对照结果，并区分直接兼容、升级后兼容、条件审核和禁止导入。 |
 | `README.md` | 批次结构、限制和运行方法。 |
 
@@ -38,18 +38,18 @@ Singapore Management University -> sg_smu
 全量 439 所启用学校的离线 preflight 结果：
 
 ```text
-passed: 345
-needs_review: 16
-failed: 78
+passed: 276
+needs_review: 76
+failed: 87
 ```
 
-- `passed`：允许一键导入。
-- `needs_review`：schema 通过，但只解析出少于 5 个专业，可能误命中摘要表，默认不导入。
-- `failed`：缺少可识别专业目录、捕获日期或其他必要结构，默认不导入。
+- `passed`：实体、URL、层级、完整度、来源精确度审计通过，允许一键导入。
+- `needs_review`：结构可入库，但目录过少、显式完整度不足，或大量专业只关联学校首页，默认不导入。
+- `failed`：伪实体、URL/层级冲突、严重目录残缺，或无法形成带来源的目录实体，默认不导入。
 
 一键导入只选择 `passed` 且文件 SHA-256 与 preflight 完全一致的学校。修改任何 Markdown 后必须重新生成 manifest 并重新 preflight。
 
-`passed` 只表示 L1 技术链路可入库，不表示已经达到 MIT 的目录对账、事实提取和 QA 完整度。详细的人类可读分级结论见 `docs/operations/university-ingestion-readiness-2026-07.md`。
+`passed` 表示 L1 结构与检索发布门禁可通过，不表示已经达到 MIT 的事实提取和人工 QA 完整度。规则说明见 `docs/operations/incremental-quality-audit-runbook.md`。
 
 ## 一键导入
 

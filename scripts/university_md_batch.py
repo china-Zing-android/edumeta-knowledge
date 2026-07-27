@@ -229,6 +229,26 @@ def selected_rows(rows: list[dict[str, Any]], args: argparse.Namespace) -> list[
     return selected
 
 
+def pending_rows(
+    records: list[dict[str, Any]],
+    state_by_id: dict[str, dict[str, Any]],
+    preflight_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    pending: list[dict[str, Any]] = []
+    for record in records:
+        state = state_by_id.get(record["university_id"], {})
+        preflight = preflight_by_id.get(record["university_id"], {})
+        audit_version = (preflight.get("quality_audit") or {}).get("audit_version")
+        reusable = (
+            state.get("status") in {"published", "unchanged"}
+            and state.get("content_sha256") == record.get("content_sha256")
+            and state.get("audit_version") == audit_version
+        )
+        if not reusable:
+            pending.append(record)
+    return pending
+
+
 def run_preflight(record: dict[str, Any], data_root: Path) -> dict[str, Any]:
     from catalog_parser.adapters import parse_school_markdown
     from catalog_parser.validation import validate_school
@@ -243,13 +263,25 @@ def run_preflight(record: dict[str, Any], data_root: Path) -> dict[str, Any]:
             )
             output = Path(temp_dir)
             result.write_jsonl(output)
-            validation = validate_school(output, record["university_id"])
+            markdown_text = (data_root / record["relative_path"]).read_text("utf-8")
+            validation = validate_school(
+                output,
+                record["university_id"],
+                markdown_text=markdown_text,
+                parser_summary=result.summary,
+            )
         catalog_count = int(validation.get("counts", {}).get("catalog_entries") or 0)
         status = "passed" if validation["status"] == "passed" else "failed"
         review_reasons: list[str] = []
         if status == "passed" and catalog_count < 5:
             status = "needs_review"
             review_reasons.append("catalog_entries_below_5")
+        quality = validation.get("checks", {}).get("catalog_quality", {})
+        failures = list(validation.get("failures", []))
+        failures.extend(name for name in quality.get("failures") or [] if name not in failures)
+        if status == "passed" and quality.get("audit_status") == "needs_review":
+            status = "needs_review"
+            review_reasons.extend(quality.get("warnings") or [])
         return {
             "university_id": record["university_id"],
             "relative_path": record["relative_path"],
@@ -257,12 +289,16 @@ def run_preflight(record: dict[str, Any], data_root: Path) -> dict[str, Any]:
             "status": status,
             "parser_adapter": result.summary.get("parser_adapter", record.get("parser_adapter")),
             "counts": validation.get("counts", {}),
-            "failures": validation.get("failures", []),
+            "failures": failures,
             "review_reasons": review_reasons,
+            "quality_audit": quality,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
         }
     except Exception as exc:  # noqa: BLE001 - preflight must attribute every document failure.
-        return {
+        from catalog_parser.validation import parser_failure_audit
+
+        quality = parser_failure_audit(str(exc))
+        report = {
             "university_id": record["university_id"],
             "relative_path": record["relative_path"],
             "content_sha256": record.get("content_sha256"),
@@ -270,6 +306,10 @@ def run_preflight(record: dict[str, Any], data_root: Path) -> dict[str, Any]:
             "error": str(exc),
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
         }
+        if quality:
+            report["failures"] = quality["failures"]
+            report["quality_audit"] = quality
+        return report
 
 
 def upload_school(client: httpx.Client, base_url: str, data_root: Path, record: dict[str, Any]) -> dict[str, Any]:
@@ -373,7 +413,7 @@ def main() -> None:
             and preflight_by_id[row["university_id"]].get("content_sha256") == row.get("content_sha256")
         ]
     state_by_id = {row["university_id"]: row for row in read_jsonl(args.state)}
-    pending = [row for row in records if state_by_id.get(row["university_id"], {}).get("status") not in {"published", "unchanged"}]
+    pending = pending_rows(records, state_by_id, preflight_by_id)
     if args.dry_run:
         print(json.dumps({"selected": len(records), "pending": len(pending), "university_ids": [row["university_id"] for row in pending]}, ensure_ascii=False, indent=2))
         return
@@ -393,6 +433,8 @@ def main() -> None:
                     "run_id": accepted["run_id"],
                     "operation": accepted.get("operation"),
                     "status": terminal.get("status"),
+                    "content_sha256": record.get("content_sha256"),
+                    "audit_version": (preflight_by_id.get(record["university_id"], {}).get("quality_audit") or {}).get("audit_version"),
                     "counts": terminal.get("counts", {}),
                     "weknora_jobs": terminal.get("weknora_jobs", {}),
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
@@ -402,6 +444,8 @@ def main() -> None:
                     "university_id": record["university_id"],
                     "relative_path": record["relative_path"],
                     "status": "failed",
+                    "content_sha256": record.get("content_sha256"),
+                    "audit_version": (preflight_by_id.get(record["university_id"], {}).get("quality_audit") or {}).get("audit_version"),
                     "error": str(exc),
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 }

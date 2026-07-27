@@ -85,7 +85,7 @@ See `qa/manual/md-first-l1-weknora-qa-guide.md` for manual QA and `docs/operatio
 
 ## Batch University Markdown Import
 
-The repository includes a country-organized 2026-07 batch under `data/raw-md/universities/`: 448 source documents, 439 enabled universities after duplicate resolution, and 345 currently passing the offline publication gate.
+The repository includes a country-organized 2026-07 batch under `data/raw-md/universities/`: 448 source documents and 439 enabled universities after duplicate resolution. Under quality ruleset `2026-07-24.1`, 276 pass automatic publication, 76 require review, and 87 are blocked.
 
 With Compose running and `WEKNORA_IMPORT_ENABLED=false`, preview and import a small batch through the Fast Router container:
 
@@ -94,4 +94,4 @@ With Compose running and `WEKNORA_IMPORT_ENABLED=false`, preview and import a sm
 ./scripts/import_universities.sh --country US --limit 5
 ```
 
-The command is sequential and resumable. It imports only records whose manifest hash matches a `passed` preflight result. See `docs/operations/batch-university-md-ingestion.md` for validation, idempotency, and full-batch procedures.
+The command is sequential and resumable. It imports only records whose manifest hash matches a `passed` preflight result. Every ingestion runs pre-publish static audit and post-index retrieval probes before activation. See `docs/operations/batch-university-md-ingestion.md` and `docs/operations/incremental-quality-audit-runbook.md`.

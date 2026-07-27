@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from catalog_parser.disciplines import classify_catalog_entry
 from fast_router.opensearch_retrieval import CurrentVersionMap, OpenSearchRetrievalClient
 from fast_router.retrieval import RetrievalEngine, infer_search_direction
 
@@ -98,6 +99,18 @@ class FakeCrossUniversityL1:
 
 
 class CrossUniversityRetrievalTests(unittest.TestCase):
+    def test_discipline_classification_does_not_broaden_from_unrelated_school_name(self) -> None:
+        disciplines = classify_catalog_entry({
+            "program_name": "Economics",
+            "canonical_program_name": "Economics",
+            "department": "Department of Economics",
+            "school": "School of Medicine",
+            "search_text": "Example University School of Medicine Economics",
+            "topics": ["catalog", "programs"],
+        })
+
+        self.assertEqual(disciplines, ["economics"])
+
     def test_auto_direction_detects_discipline_to_university_query(self) -> None:
         self.assertEqual(infer_search_direction("医学专业的院校有哪些？", None, {}, "auto"), "upward")
         self.assertEqual(infer_search_direction("MIT 有哪些医学相关项目？", "mit", {}, "auto"), "downward")

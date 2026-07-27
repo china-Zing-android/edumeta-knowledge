@@ -16,10 +16,10 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 
 ## Quality Gate
 
-- 345 `passed`: allowed for default batch ingestion.
-- 16 `needs_review`: schema-valid but fewer than five parsed catalog entries.
-- 78 `failed`: no publishable catalog/date structure.
+- Ruleset `2026-07-24.1`: 276 `passed`, 76 `needs_review`, 87 `failed` across 439 enabled universities.
+- Five generic issue classes are gated: invalid entities, URL integrity, degree consistency, completeness/source specificity, and retrieval regression.
 - Import requires the current Markdown SHA-256 to match the committed passed preflight result.
+- Pre/post audit results persist in `ingestion_runs.quality_audits`; post-index failure leaves the previous current version active.
 
 ## Delivered
 
@@ -29,23 +29,31 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 - Parser support for unnumbered catalog tables, relative URLs, table school/department columns, localized dates, and duplicate structured entries.
 - Dataset README and operations runbook.
 - Per-university pre/post Parser compatibility results and a Chinese ingestion-readiness report separating technical ingestion from MIT-level release acceptance.
+- Versioned quality rules, structured audit schema, pre-publish static gate, staged OpenSearch post-index probes, and ingestion audit persistence.
+- Generic fixes for false table headers, full/bare/relative URL ordering, BA/BS/Minor identity, hard degree filters, catalog/context ownership, and discipline over-expansion.
+- Resumable batch state now invalidates on Markdown hash or quality-ruleset changes, so previously published schools are re-imported after parser/audit upgrades.
+- Explicit dry-run/apply quarantine command removes previously published but now unverified schools from the current retrieval set without deleting history.
 
 ## Verification
 
-- Full Python suite: 188 passed, 7 skipped, 11 subtests passed.
-- Full preflight: 345 passed, 16 needs_review, 78 failed.
+- Full Python suite after quality-gate implementation: 213 passed, 7 skipped, 15 subtests passed.
+- TypeScript Tool Gateway: 9 tests passed after typecheck and build.
+- Full preflight: 276 passed, 76 needs_review, 87 failed.
 - Dry-run selection with country/limit returns the expected passed IDs.
 - Fake HTTP lifecycle verifies create -> published -> repeated upload unchanged.
 - No source file exceeds GitHub's per-file size limit; no credential pattern was found.
 - Pre-upgrade comparison: 210 direct technical passes, 135 newly passing after generic Parser upgrades, 16 conditional reviews, and 78 blocked.
 - Live post-ingestion student QA against `http://100.74.163.113:8000`: 30 cases x 5 runs, 22/30 strict pass, no nondeterminism, L1 HTTP p95 153.490 ms. Accuracy and source-URL quality do not pass release criteria; detailed report at `qa/reports/live-batch-student-qa-2026-07-24.md`.
+- Post-audit QA uses the same 30 question texts in `qa/live-batch-student-qa-post-audit-2026-07-27.jsonl`. Princeton, Melbourne, and Toronto now expect `not_found` because their Markdown fails the completeness gate and must be quarantined. The original suite remains unchanged as the 22/30 baseline.
+- `qa/` is mounted read-only into Fast Router so the server can run the 30-question benchmark inside Docker without installing host Python packages.
 
 ## Current Risks
 
-- Generic Markdown Parser accepts summary/category/policy rows as catalog entries in some schools.
-- URL canonicalization can concatenate a base domain with an already host-like URL, yielding unusable double-domain source URLs.
-- Retrieval ranking can return a minor, joint degree, or unrelated entry for a requested degree level.
-- Batch `passed` remains a technical ingestion status, not MIT-level content acceptance.
+- `needs_review` schools are structurally parseable but are not automatically publishable, mainly because their catalog uses one generic homepage source.
+- 87 blocked schools require better Markdown/source structure; they must not receive school-specific parser exceptions.
+- The live 30-question QA cannot validate these fixes until the server deploys this code and affected schools are re-imported.
+- Full 30-question validation requires all 276 passed schools to be re-imported, not only the named downward-query schools, because upward/range questions search the whole current corpus.
+- Batch `passed` remains an L1 structural/retrieval status, not MIT-level factual acceptance.
 
 ## Runtime Command
 
@@ -55,3 +63,5 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 ```
 
 Set `WEKNORA_IMPORT_ENABLED=false` before L1 batch ingestion. The default command does not import failed, needs-review, duplicate, or hash-mismatched documents.
+
+After deployment, run quarantine in dry-run/apply mode, re-import all passed schools, then execute the post-audit 30-question suite. Do not delete Docker volumes.

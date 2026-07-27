@@ -36,6 +36,23 @@ def infer_level(query: str) -> str | None:
     return None
 
 
+def infer_degree_constraint(query: str) -> tuple[str, list[str] | str | None]:
+    q = query.lower()
+    if re.search(r"\bph\.?d\b", q):
+        return "include", "PhD"
+    if "minor" in q or "辅修" in q:
+        return "include", "Minor"
+    if re.search(r"\bm\.?s\b", q) and "master" not in q:
+        return "include", "SM"
+    if any(term in q for term in ("master", "硕士")):
+        return "include", ["SM", "MEng", "MArch", "MCP", "MASc", "MBA", "MBAn", "MFin", "MSMS"]
+    if any(term in q for term in ("major", "本科专业", "undergraduate program", "undergraduate major")):
+        return "exclude", ["Minor", "Certificate"]
+    if any(term in q for term in ("graduate program", "研究生项目")):
+        return "exclude", ["SB", "Minor"]
+    return "none", None
+
+
 def normalized_catalog_query(query: str) -> str:
     value = query.lower()
     value = re.sub(r"\bai\b", "artificial intelligence", value)
@@ -111,7 +128,7 @@ class CurrentVersionMap:
                 SELECT sv.university_id, sv.dataset_version, u.university_name, u.aliases
                   FROM school_versions sv
                   JOIN universities u ON u.university_id = sv.university_id
-                 WHERE sv.publication_state='current'
+                 WHERE sv.publication_state='current' AND u.status='active'
                 """
             )
             rows = cursor.fetchall()
@@ -200,12 +217,16 @@ class OpenSearchRetrievalClient:
             {"term": {"status": "active"}},
         ]
         catalog_filters = [*common_filters]
+        catalog_must_not: list[dict[str, Any]] = []
         if level:
             catalog_filters.append({"term": {"level": level}})
-        if "minor" in query.lower():
-            catalog_filters.append({"term": {"degree_level": "Minor"}})
-        elif "master" in query.lower():
-            catalog_filters.append({"terms": {"degree_level": ["SM", "MEng", "MArch", "MCP", "MASc", "MBA", "MBAn", "MFin", "MSMS"]}})
+        degree_mode, degree_values = infer_degree_constraint(query)
+        if degree_mode == "include" and isinstance(degree_values, str):
+            catalog_filters.append({"term": {"degree_level": degree_values}})
+        elif degree_mode == "include" and degree_values:
+            catalog_filters.append({"terms": {"degree_level": degree_values}})
+        elif degree_mode == "exclude" and degree_values:
+            catalog_must_not.append({"terms": {"degree_level": degree_values}})
         catalog_should: list[dict[str, Any]] = []
         entry_id_match = re.search(r"\bent_[a-z0-9_]+\b", query.lower())
         if entry_id_match:
@@ -220,7 +241,12 @@ class OpenSearchRetrievalClient:
         catalog_body = {
             "size": max_results,
             "track_total_hits": False,
-            "query": {"bool": {"filter": catalog_filters, "should": catalog_should, "minimum_should_match": 1 if catalog_should else 0}},
+            "query": {"bool": {
+                "filter": catalog_filters,
+                "must_not": catalog_must_not,
+                "should": catalog_should,
+                "minimum_should_match": 1 if catalog_should else 0,
+            }},
             "min_score": 1.0,
         }
 
@@ -280,6 +306,10 @@ class OpenSearchRetrievalClient:
         )
         if program_context_requested and level:
             context_filters.append({"term": {"attributes.level": level}})
+        if degree_mode == "include" and isinstance(degree_values, str):
+            context_filters.append({"term": {"attributes.degree_level": degree_values}})
+        elif degree_mode == "include" and degree_values:
+            context_filters.append({"terms": {"attributes.degree_level": degree_values}})
         context_should: list[dict[str, Any]] = []
         if requested_entry_id:
             context_should.extend([
@@ -301,6 +331,7 @@ class OpenSearchRetrievalClient:
             "track_total_hits": False,
             "query": {"bool": {
                 "filter": context_filters,
+                "must_not": [{"terms": {"attributes.degree_level": degree_values}}] if degree_mode == "exclude" and degree_values else [],
                 "should": context_should,
                 "minimum_should_match": 1 if context_should else 0,
             }},

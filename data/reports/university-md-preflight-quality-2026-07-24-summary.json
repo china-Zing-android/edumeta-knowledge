@@ -1,0 +1,7 @@
+{
+  "failed": 87,
+  "needs_review": 76,
+  "output": "data/raw-md/universities/preflight-results.jsonl",
+  "passed": 276,
+  "selected": 439
+}

@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
   weknora_kb_operation TEXT NOT NULL DEFAULT 'reuse', -- create | reuse | explicit
   status              TEXT NOT NULL,          -- accepted|unchanged|validating|publishing|published|failed
   stage_failures      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  quality_audits      JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_message       TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),

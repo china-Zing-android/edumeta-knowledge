@@ -10,7 +10,45 @@ from pathlib import Path
 from typing import Any
 
 
-PARSER_CONTRACT_VERSION = "5"
+PARSER_CONTRACT_VERSION = "6"
+
+
+class QualityGateError(RuntimeError):
+    def __init__(self, stage: str, report: dict[str, Any]) -> None:
+        self.stage = stage
+        self.report = report
+        super().__init__(f"{stage} quality gate failed: {', '.join(report.get('failures') or ['unknown'])}")
+
+
+def run_pre_publish_audit(
+    normalized_dir: Path,
+    university_id: str,
+    *,
+    markdown_text: str | None = None,
+    parser_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from catalog_parser.validation import validate_school
+
+    validation = validate_school(
+        normalized_dir,
+        university_id,
+        markdown_text=markdown_text,
+        parser_summary=parser_summary,
+    )
+    quality = validation["checks"]["catalog_quality"]
+    report = {
+        **quality,
+        "validation_status": validation["status"],
+        "validation_failures": validation["failures"],
+    }
+    if validation["status"] != "passed" or quality["audit_status"] != "passed":
+        combined = list(dict.fromkeys([*validation["failures"], *quality["failures"]]))
+        if quality["audit_status"] == "needs_review":
+            combined.append("quality_review_required")
+        report["audit_status"] = "failed"
+        report["failures"] = combined
+        raise QualityGateError("pre_publish", report)
+    return report
 
 
 def merge_university_metadata(parsed: dict[str, Any], requested: dict[str, Any]) -> dict[str, Any]:
@@ -214,13 +252,47 @@ class IngestionService:
         from psycopg.types.json import Jsonb
         from catalog_parser.adapters import parse_school_markdown
         from catalog_parser.postgres_loader import load_dataset, publish_school_version, stage_school_records, activate_school_version, upsert_university
-        from indexer.opensearch_publisher import publish_school
+        from indexer.opensearch_publisher import activate_published_school, audit_staged_school, publish_school
 
         normalized_dir = run_dir / "normalized"
         normalized_dir.mkdir(parents=True, exist_ok=True)
         try:
-            result = parse_school_markdown(university_id, raw_path, fallback_adapter_name="auto")
+            try:
+                result = parse_school_markdown(university_id, raw_path, fallback_adapter_name="auto")
+            except ValueError as exc:
+                from catalog_parser.validation import parser_failure_audit
+
+                failure_audit = parser_failure_audit(str(exc))
+                if failure_audit:
+                    raise QualityGateError("pre_publish", failure_audit) from exc
+                raise
             metadata = merge_university_metadata(result.summary, requested_metadata)
+            declared_version = next(
+                (str(row.get("dataset_version")) for rows in (
+                    result.source_registry, result.catalog_entries, result.url_manifest, result.quick_facts,
+                    result.entity_contexts,
+                ) for row in rows if row.get("dataset_version")),
+                version_id,
+            )
+            effective_version = self._effective_dataset_version(
+                university_id=university_id,
+                version_id=version_id,
+                declared_version=declared_version,
+                input_hash=input_hash,
+            )
+            for rows in (
+                result.source_registry, result.catalog_entries, result.url_manifest,
+                result.quick_facts, result.entity_contexts,
+            ):
+                for row in rows:
+                    row["dataset_version"] = effective_version
+            result.write_jsonl(normalized_dir)
+            pre_audit = run_pre_publish_audit(
+                normalized_dir,
+                university_id,
+                markdown_text=raw_path.read_text("utf-8"),
+                parser_summary=result.summary,
+            )
             resolved_kb_id, resolved_kb_name = self._resolve_weknora_knowledge_base(
                 kb_operation,
                 target_kb_id,
@@ -243,26 +315,15 @@ class IngestionService:
                 manifest["weknora_chunk_ids"] = []
                 manifest["weknora_tag_ids"] = []
                 manifest["weknora_import_job_id"] = None
-            declared_version = next(
-                (str(row.get("dataset_version")) for rows in (
-                    result.source_registry, result.catalog_entries, result.url_manifest, result.quick_facts,
-                    result.entity_contexts,
-                ) for row in rows if row.get("dataset_version")),
-                version_id,
-            )
-            effective_version = self._effective_dataset_version(
-                university_id=university_id,
-                version_id=version_id,
-                declared_version=declared_version,
-                input_hash=input_hash,
-            )
-            for rows in (
-                result.source_registry, result.catalog_entries, result.url_manifest,
-                result.quick_facts, result.entity_contexts,
-            ):
-                for row in rows:
-                    row["dataset_version"] = effective_version
             result.write_jsonl(normalized_dir)
+            with psycopg.connect(self.postgres_dsn) as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT record_counts FROM school_versions WHERE university_id=%s AND publication_state='current'",
+                    (university_id,),
+                )
+                previous = cursor.fetchone()
+            previous_counts = dict(previous[0] or {}) if previous else {}
+            pre_audit["before_counts"] = previous_counts
             dataset = load_dataset(normalized_dir, university_id)
             counts = {name: len(rows) for name, rows in dataset.items()}
             with psycopg.connect(self.postgres_dsn) as connection:
@@ -282,6 +343,10 @@ class IngestionService:
                     cursor.execute(
                         "UPDATE ingestion_runs SET weknora_knowledge_base_id=%s WHERE run_id=%s",
                         (resolved_kb_id, run_id),
+                    )
+                    cursor.execute(
+                        "UPDATE ingestion_runs SET quality_audits=%s WHERE run_id=%s",
+                        (Jsonb({"pre_publish": pre_audit}), run_id),
                     )
                     parsed_dataset_version = next(
                         (str(row.get("dataset_version")) for rows in dataset.values() for row in rows if row.get("dataset_version")),
@@ -304,17 +369,40 @@ class IngestionService:
                     cursor.execute("UPDATE ingestion_runs SET status='publishing', updated_at=now() WHERE run_id=%s", (run_id,))
 
             self._enrich_normalized_sources(normalized_dir, university_id, version_id)
+            university_metadata = {
+                "university_name": metadata.get("university_name"),
+                "aliases": metadata.get("aliases") or [],
+                "country_code": metadata.get("country_code"),
+                "region": metadata.get("region"),
+                "school_tier": school_tier,
+            }
             publish_school(
                 normalized_dir,
                 university_id,
                 self.opensearch_url,
-                university_metadata={
-                    "university_name": metadata.get("university_name"),
-                    "aliases": metadata.get("aliases") or [],
-                    "country_code": metadata.get("country_code"),
-                    "region": metadata.get("region"),
-                    "school_tier": school_tier,
-                },
+                university_metadata=university_metadata,
+                activate=False,
+            )
+            post_audit = audit_staged_school(
+                normalized_dir,
+                university_id,
+                self.opensearch_url,
+                university_metadata=university_metadata,
+            )
+            post_audit["before_counts"] = previous_counts
+            with psycopg.connect(self.postgres_dsn) as connection:
+                with connection.transaction():
+                    connection.cursor().execute(
+                        "UPDATE ingestion_runs SET quality_audits=%s WHERE run_id=%s",
+                        (Jsonb({"pre_publish": pre_audit, "post_publish": post_audit}), run_id),
+                    )
+            if post_audit["audit_status"] != "passed":
+                raise QualityGateError("post_publish", post_audit)
+            activate_published_school(
+                normalized_dir,
+                university_id,
+                self.opensearch_url,
+                university_metadata=university_metadata,
             )
 
             with psycopg.connect(self.postgres_dsn) as connection:
@@ -333,12 +421,17 @@ class IngestionService:
             if self.on_published:
                 self.on_published()
         except Exception as exc:  # noqa: BLE001 - failure is persisted for status polling.
+            failure = (
+                {"stage": exc.stage, "reason": str(exc), "audit": exc.report}
+                if isinstance(exc, QualityGateError)
+                else {"stage": "pipeline", "reason": str(exc)}
+            )
             with psycopg.connect(self.postgres_dsn) as connection:
                 with connection.transaction():
                     cursor = connection.cursor()
                     cursor.execute(
                         "UPDATE ingestion_runs SET status='failed', error_message=%s, stage_failures=%s, updated_at=now() WHERE run_id=%s",
-                        (str(exc), Jsonb([{"stage": "pipeline", "reason": str(exc)}]), run_id),
+                        (str(exc), Jsonb([failure]), run_id),
                     )
                     cursor.execute(
                         "UPDATE school_versions SET publication_state='failed' WHERE university_id=%s AND version_id=%s AND publication_state='staging'",
@@ -520,7 +613,7 @@ class IngestionService:
                 """
                 SELECT run_id, university_id, school_tier, operation, version_id, input_hash, status,
                        stage_failures, error_message, created_at, updated_at,
-                       weknora_knowledge_base_id, weknora_kb_operation
+                       weknora_knowledge_base_id, weknora_kb_operation, quality_audits
                   FROM ingestion_runs WHERE run_id=%s
                 """,
                 (run_id,),
@@ -545,4 +638,5 @@ class IngestionService:
             "opensearch_published": row[6] == "published", "weknora_jobs": jobs,
             "created_at": row[9].isoformat(), "updated_at": row[10].isoformat(),
             "weknora_knowledge_base_id": row[11], "weknora_kb_operation": row[12],
+            "quality_audits": row[13],
         }

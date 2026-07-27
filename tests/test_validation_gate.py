@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from catalog_parser.postgres_loader import load_dataset
-from catalog_parser.validation import validate_school, write_validation_report
+from catalog_parser.validation import _url_integrity_issue, validate_school, write_validation_report
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +23,10 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 
 class ValidationGateTests(unittest.TestCase):
+    def test_url_integrity_allows_normal_json_and_xml_file_paths(self) -> None:
+        self.assertIsNone(_url_integrity_issue("https://science.anu.edu.au/sitemap.xml"))
+        self.assertIsNone(_url_integrity_issue("https://api.nusmods.com/v2/moduleInfo.json"))
+
     def copy_dataset(self, root: Path) -> Path:
         target = root / "mit"
         shutil.copytree(MIT_DATA, target)
@@ -62,6 +66,82 @@ class ValidationGateTests(unittest.TestCase):
 
             self.assertEqual(report["status"], "failed")
             self.assertIn("cross_references", report["failures"])
+
+    def test_catalog_quality_audit_rejects_double_domain_urls(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            sources = read_jsonl(data_dir / "source_registry.jsonl")
+            source_id = sources[0]["source_id"]
+            broken = "https://www.harvard.edu/gsas.harvard.edu/program/computer-science"
+            sources[0]["canonical_url"] = broken
+            sources[0]["source_url"] = broken
+            write_jsonl(data_dir / "source_registry.jsonl", sources)
+            catalog = read_jsonl(data_dir / "catalog_entries.jsonl")
+            for row in catalog:
+                if row["source_id"] == source_id:
+                    row["source_url"] = broken
+            write_jsonl(data_dir / "catalog_entries.jsonl", catalog)
+
+            report = validate_school(data_dir, "mit")
+
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("catalog_quality", report["failures"])
+        self.assertIn("url_integrity", report["checks"]["catalog_quality"]["failures"])
+
+    def test_catalog_quality_audit_rejects_non_entity_program_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["program_name"] = "degrees.taxonomy"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("entity_validity", report["checks"]["catalog_quality"]["failures"])
+
+    def test_catalog_quality_audit_rejects_degree_level_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["degree_level"] = "PhD"
+            rows[0]["level"] = "undergraduate"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("degree_consistency", report["checks"]["catalog_quality"]["failures"])
+
+    def test_degree_audit_ignores_parent_path_that_lists_multiple_degree_types(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["degree_level"] = "Certificate"
+            rows[0]["level"] = "graduate"
+            rows[0]["source_url"] = "https://degrees.example.edu/masters-phd/program/graduate-certificate"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
+        self.assertFalse(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
+
+    def test_degree_audit_allows_joint_program_url_that_names_both_degrees(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["program_name"] = "Sociology PhD / Applied Mathematics and Statistics MS Joint Program"
+            rows[0]["degree_level"] = "SM"
+            rows[0]["degree_full_name"] = "MS"
+            rows[0]["level"] = "graduate"
+            rows[0]["source_url"] = "https://example.edu/programs/sociology-phd-applied-mathematics-statistics-ms-joint-program"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
+        self.assertFalse(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
 
     def test_entity_context_missing_cross_references_fail(self) -> None:
         mutations = (

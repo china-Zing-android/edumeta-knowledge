@@ -86,6 +86,7 @@ services:
       - batch_import_state:/app/data/import-state
       - ../data/raw-md/universities:/app/data/raw-md/universities:ro
       - ../data/traces:/app/data/traces
+      - ../qa:/app/qa:ro
     ports:
       - "${FAST_ROUTER_BIND_HOST:-127.0.0.1}:${FAST_ROUTER_PORT:-8000}:8000"
     depends_on:

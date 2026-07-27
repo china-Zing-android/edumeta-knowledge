@@ -14,6 +14,8 @@
 - 新校注册、同校更新与 unchanged 操作可区分；院校元数据进入 PostgreSQL 和 OpenSearch。
 - 版本切换时非终态 WeKnora source 在新 current 版本有续接 job。
 - 失败 parse/index/import 保留旧 current 学校版本。
+- 每次增量保存 `pre_publish` 和 `post_publish` 审计，规则集版本、规则 ID、前后数量和失败记录可追踪。
+- 伪实体、双域 URL、层级错配、目录残缺和错误检索命中分别由 `CAT-*` / `RET-SCOPE-001` 阻断。
 
 通过标准：上述全为真。
 
@@ -31,8 +33,12 @@
 - discovery 与 Fact Store 命中请求的 `weknora_ms=0`，mock/spy WeKnora 调用次数为 0。
 - 多专业 primary 最多 3 个；related 不重复 primary，且每个 primary 最多 2 个确定性关系。
 - `context` 始终为对象，且不被记录为 WeKnora evidence。
+- program context 不得在缺少 catalog match 时冒充正式目录结果。
+- 本科 major 默认排除 Minor/Certificate；PhD、Master、Minor 使用硬过滤。
 
 通过标准：上述全部满足。低于 min score 的结果被 omit；禁止用无关结果填 top_k。
+
+增量审计规则和操作步骤见 `docs/operations/incremental-quality-audit-runbook.md`。
 
 ## Performance Gate
 

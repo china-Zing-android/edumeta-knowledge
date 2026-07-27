@@ -132,6 +132,19 @@ class RecordingMsearchClient:
         return {"responses": [{"hits": {"hits": []}} for _ in range(4)]}
 
 
+class ProgramContextOnlyL1(FakeL1):
+    def search(self, **kwargs):
+        return L1SearchResult(
+            university_id="mit",
+            dataset_version="mit_v2",
+            catalog=[],
+            facts=[],
+            sources=[],
+            contexts=[program_context("14-1", "Economics", "ent_economics")],
+            elapsed_ms=1.0,
+        )
+
+
 class ProgramScopedMsearchClient:
     def __init__(self) -> None:
         self.bodies: list[list[dict]] = []
@@ -254,6 +267,30 @@ class DiscoveryContextRetrievalTests(unittest.TestCase):
         self.assertIn({"term": {"entity_type": "university"}}, context_filters)
         self.assertNotIn({"term": {"attributes.level": "undergraduate"}}, context_filters)
 
+    def test_degree_intent_adds_hard_catalog_filters(self) -> None:
+        cases = (
+            ("MIT EECS PhD", {"term": {"degree_level": "PhD"}}, None),
+            ("MIT Computer Science master", {"terms": {"degree_level": ["SM", "MEng", "MArch", "MCP", "MASc", "MBA", "MBAn", "MFin", "MSMS"]}}, None),
+            ("MIT Economics undergraduate major", None, {"terms": {"degree_level": ["Minor", "Certificate"]}}),
+            ("MIT Economics minor", {"term": {"degree_level": "Minor"}}, None),
+        )
+        for query, expected_filter, expected_must_not in cases:
+            with self.subTest(query=query):
+                fake = RecordingMsearchClient()
+                client = OpenSearchRetrievalClient(
+                    "http://unused",
+                    CurrentVersionMap(initial={"mit": "mit_v2"}),
+                    client=fake,
+                )
+
+                client.search(query=query, university_id="mit", dataset_version="mit_v2")
+
+                catalog_bool = fake.body[1]["query"]["bool"]
+                if expected_filter:
+                    self.assertIn(expected_filter, catalog_bool["filter"])
+                if expected_must_not:
+                    self.assertIn(expected_must_not, catalog_bool["must_not"])
+
     def test_explicit_entry_context_scopes_source_query_before_top_k(self) -> None:
         fake = RecordingMsearchClient()
         client = OpenSearchRetrievalClient(
@@ -316,6 +353,22 @@ class DiscoveryContextRetrievalTests(unittest.TestCase):
         self.assertIn("14-2 Mathematical Economics", labels)
         self.assertTrue(all("relation_reason" in row for row in result["context"]["related_entities"]))
         self.assertEqual(self.weknora.calls, [])
+
+    def test_program_context_without_catalog_match_is_not_returned_as_formal_match(self) -> None:
+        engine = RetrievalEngine(ProgramContextOnlyL1(), self.weknora)
+
+        result = engine.retrieve(
+            query="MIT Economics undergraduate major",
+            university_id="mit",
+            context={},
+            filters={},
+            direction="auto",
+            max_results=5,
+        )
+
+        self.assertEqual(result["matches"], [])
+        self.assertEqual(result["mode"], "not_found")
+        self.assertIn("catalog_match_missing", result["warnings"])
 
     def test_multi_program_discovery_returns_at_most_three_primary_entities(self) -> None:
         result = self.retrieve("MIT Economics、Mathematical Economics 和 6-14 有什么关系？")

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edumeta.local/schemas/quality_audit.schema.json",
+  "title": "Incremental ingestion quality audit",
+  "type": "object",
+  "required": ["audit_status", "audit_version", "matched_rule_ids", "checks", "failures", "warnings", "before_counts", "after_counts"],
+  "properties": {
+    "audit_status": {"enum": ["passed", "needs_review", "failed"]},
+    "audit_version": {"type": "string", "minLength": 1},
+    "matched_rule_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "checks": {"type": "object"},
+    "failures": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "warnings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "record_ids": {"type": "array", "items": {"type": "string"}},
+    "before_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "after_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+  },
+  "additionalProperties": true
+}

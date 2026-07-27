@@ -244,7 +244,28 @@ class RetrievalEngine:
             if not matches:
                 matches = result.catalog[:query_plan.max_primary_entities]
             if not matches:
-                matches = context_payload["primary_entities"]
+                university_matches = [
+                    row for row in context_payload["primary_entities"]
+                    if row.get("entity_type") == "university"
+                ]
+                if university_matches:
+                    matches = university_matches
+                else:
+                    return self._response(
+                        trace_id,
+                        "not_found",
+                        resolved_id,
+                        [],
+                        [],
+                        [],
+                        ["catalog_match_missing"],
+                        started,
+                        result.elapsed_ms,
+                        0,
+                        dataset_version,
+                        context_payload,
+                        query_plan,
+                    )
             return self._response(trace_id, "l1", resolved_id, matches, [], [], [], started, result.elapsed_ms, 0, dataset_version, context_payload, query_plan)
 
         resolved_program_scope = bool(

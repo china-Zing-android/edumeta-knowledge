@@ -1,5 +1,7 @@
 # 2026-07 院校 Markdown 入库分级报告
 
+> 历史报告：本页保留 `d41114f` 阶段的 345/16/78 技术口径。当前自动发布口径已升级为规则集 `2026-07-24.1`，最新结果为 276 passed / 76 needs_review / 87 failed，见 `docs/operations/incremental-quality-audit-runbook.md`。
+
 ## 1. 结论先行
 
 本报告基于 448 份 Markdown、439 个启用院校、当前 Parser 全量 preflight，以及提交 `d41114f` 前后的 Parser 对照解析生成。

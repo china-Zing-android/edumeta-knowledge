@@ -4,10 +4,82 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from indexer.opensearch_publisher import bulk_actions, dry_run_report, load_publish_plan
+from indexer.opensearch_publisher import audit_staged_school, bulk_actions, dry_run_report, load_publish_plan, publish_school
 
 
 class OpenSearchPublisherTests(unittest.TestCase):
+    def test_post_index_audit_rejects_wrong_top_catalog_match(self) -> None:
+        class FakeClient:
+            def search(self, **kwargs):
+                return {
+                    "hits": {
+                        "hits": [{"_source": {"entry_id": "ent_wrong", "program_name": "Wrong Program"}}]
+                    }
+                }
+
+        report = audit_staged_school(
+            Path("data/normalized/mit"),
+            "mit",
+            "http://unused",
+            client=FakeClient(),
+            max_probes=1,
+        )
+
+        self.assertEqual(report["audit_status"], "failed")
+        self.assertIn("retrieval_regression", report["failures"])
+
+    def test_staging_publish_does_not_deactivate_current_documents(self) -> None:
+        class FakeIndices:
+            def exists(self, **kwargs):
+                return True
+
+            def create(self, **kwargs):
+                return None
+
+            def put_mapping(self, **kwargs):
+                return None
+
+            def get_alias(self, **kwargs):
+                return {"index": {}}
+
+            def put_alias(self, **kwargs):
+                return None
+
+            def refresh(self, **kwargs):
+                return None
+
+        class FakeClient:
+            def __init__(self):
+                self.indices = FakeIndices()
+                self.update_calls = []
+
+            def update_by_query(self, **kwargs):
+                self.update_calls.append(kwargs)
+
+            def delete_by_query(self, **kwargs):
+                return None
+
+            def count(self, **kwargs):
+                version = next(
+                    clause["term"]["dataset_version"]
+                    for clause in kwargs["body"]["query"]["bool"]["filter"]
+                    if "dataset_version" in clause.get("term", {})
+                )
+                plan = load_publish_plan(Path("data/normalized/mit"), "mit")
+                return {"count": next(item["count"] for item in plan.values() if item["dataset_version"] == version and item["alias"] == kwargs["index"])}
+
+        fake = FakeClient()
+
+        publish_school(
+            Path("data/normalized/mit"),
+            "mit",
+            "http://unused",
+            activate=False,
+            client=fake,
+            bulk_writer=lambda client, actions: (len(list(actions)), []),
+        )
+
+        self.assertEqual(fake.update_calls, [])
     def test_publish_plan_allows_empty_optional_entity_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir)

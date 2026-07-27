@@ -80,7 +80,11 @@ docker compose exec -T fast-router sh -lc \
 ./scripts/import_universities.sh
 ```
 
-默认仅导入 preflight `passed` 且哈希一致的 345 所。串行发布是有意设计，用于避免并发切换 OpenSearch 全局 alias。不要用 shell 并行启动多个批次。
+默认仅导入 preflight `passed` 且哈希一致的 276 所。76 所 `needs_review` 和 87 所 `failed` 不会自动导入。串行发布是有意设计，用于避免并发切换 OpenSearch current 状态。不要用 shell 并行启动多个批次。
+
+续跑状态不仅检查 `published/unchanged`，还检查 Markdown 哈希和质量规则版本。升级 Parser 或审计规则后，旧状态会自动失效并重新导入通过门禁的院校。
+
+若服务器已经导入过旧批次，先执行 `./scripts/quarantine_unverified_universities.sh` 预览，再用 `--apply` 隔离当前不再通过门禁的旧院校；否则这些旧 current 数据仍可能被检索到。
 
 ## 恢复 WeKnora
 
