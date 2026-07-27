@@ -14,6 +14,14 @@ def test_root_compose_includes_the_canonical_stack() -> None:
     assert payload["include"] == ["infra/docker-compose.yml"]
 
 
+def test_server_compose_exposes_mcp_on_loopback_and_tailscale() -> None:
+    text = (ROOT / "compose.server.yaml").read_text("utf-8")
+
+    assert '127.0.0.1:${MCP_SERVER_PORT:-18765}:8765' in text
+    assert '${MCP_TAILSCALE_HOST:-100.74.163.113}:${MCP_SERVER_PORT:-18765}:8765' in text
+    assert "!override" in text
+
+
 def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
     services = payload["services"]
