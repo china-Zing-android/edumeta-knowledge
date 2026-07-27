@@ -89,11 +89,11 @@ jq . /tmp/cornell-preflight.jsonl
 
 该命令只处理当前门禁不通过的院校：把 PostgreSQL 院校状态设为不可检索，并将 OpenSearch current 标记关闭。它不会删除历史版本。随后再运行 `import_universities.sh` 重导 276 所 `passed` 院校。
 
-2026-07-24 规则集对 439 所的结果：
+2026-07-27 规则集对 439 所的结果：
 
 - `passed`: 276
-- `needs_review`: 76
-- `failed`: 87
+- `needs_review`: 75
+- `failed`: 88
 
 主要复核原因是专业只关联到学校首页；主要阻断原因是 Markdown 无法形成带有效来源的目录实体。
 

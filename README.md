@@ -43,6 +43,21 @@ docker compose up -d --force-recreate fast-router tool-gateway
 
 Clients in the same tailnet can then use `http://100.74.163.113:8000` and `http://100.74.163.113:8765/mcp`.
 
+For the current server, use the committed dual-bind profile instead of editing
+the base Compose ports:
+
+```bash
+docker compose -f compose.yaml -f compose.server.yaml up -d --build
+```
+
+This profile exposes Fast Router on both `127.0.0.1:8000` and
+`100.74.163.113:8000`, and MCP on both `127.0.0.1:18765/mcp` and
+`100.74.163.113:18765/mcp`. The host's existing port `8765` is not used. It
+also defaults `WEKNORA_IMPORT_ENABLED=false` so audited L1 batch ingestion does
+not automatically upload URLs. See
+`docs/operations/server-update-and-validation.md` for the complete update,
+ingestion, regression, and MCP verification sequence.
+
 ## MCP
 
 ```json
@@ -85,7 +100,7 @@ See `qa/manual/md-first-l1-weknora-qa-guide.md` for manual QA and `docs/operatio
 
 ## Batch University Markdown Import
 
-The repository includes a country-organized 2026-07 batch under `data/raw-md/universities/`: 448 source documents and 439 enabled universities after duplicate resolution. Under quality ruleset `2026-07-24.1`, 276 pass automatic publication, 76 require review, and 87 are blocked.
+The repository includes a country-organized 2026-07 batch under `data/raw-md/universities/`: 448 source documents and 439 enabled universities after duplicate resolution. Under quality ruleset `2026-07-27.1`, 276 pass automatic publication, 75 require review, and 88 are blocked.
 
 With Compose running and `WEKNORA_IMPORT_ENABLED=false`, preview and import a small batch through the Fast Router container:
 
