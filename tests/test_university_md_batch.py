@@ -8,7 +8,14 @@ from pathlib import Path
 
 import httpx
 
-from scripts.university_md_batch import build_manifest, pending_rows, poll_ingestion, run_preflight, upload_school
+from scripts.university_md_batch import (
+    PARSER_CONTRACT_VERSION,
+    build_manifest,
+    pending_rows,
+    poll_ingestion,
+    run_preflight,
+    upload_school,
+)
 from catalog_parser.deep_v2_parser import parse_deep_v2_markdown
 from catalog_parser.mit_parser import extract_capture_date
 
@@ -51,16 +58,19 @@ class UniversityMarkdownBatchTests(unittest.TestCase):
         self.assertEqual(progress, ["validating", "publishing", "published"])
         self.assertEqual(terminal["status"], "published")
 
-    def test_resume_state_is_invalidated_by_content_or_audit_version_change(self) -> None:
+    def test_resume_state_is_invalidated_by_content_audit_or_parser_version_change(self) -> None:
         records = [{"university_id": "example", "content_sha256": "new-hash"}]
         preflight = {"example": {"quality_audit": {"audit_version": "rules-v2"}}}
 
-        stale_hash = {"example": {"status": "published", "content_sha256": "old-hash", "audit_version": "rules-v2"}}
-        stale_rules = {"example": {"status": "published", "content_sha256": "new-hash", "audit_version": "rules-v1"}}
-        current = {"example": {"status": "published", "content_sha256": "new-hash", "audit_version": "rules-v2"}}
+        base = {"status": "published", "content_sha256": "new-hash", "audit_version": "rules-v2"}
+        stale_hash = {"example": {**base, "content_sha256": "old-hash", "parser_contract_version": PARSER_CONTRACT_VERSION}}
+        stale_rules = {"example": {**base, "audit_version": "rules-v1", "parser_contract_version": PARSER_CONTRACT_VERSION}}
+        stale_parser = {"example": {**base, "parser_contract_version": "old-parser"}}
+        current = {"example": {**base, "parser_contract_version": PARSER_CONTRACT_VERSION}}
 
         self.assertEqual(pending_rows(records, stale_hash, preflight), records)
         self.assertEqual(pending_rows(records, stale_rules, preflight), records)
+        self.assertEqual(pending_rows(records, stale_parser, preflight), records)
         self.assertEqual(pending_rows(records, current, preflight), [])
 
     def test_manifest_keeps_country_scoped_ids_for_same_acronym(self) -> None:

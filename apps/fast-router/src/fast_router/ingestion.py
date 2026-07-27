@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-PARSER_CONTRACT_VERSION = "6"
+PARSER_CONTRACT_VERSION = "8"
 
 
 class QualityGateError(RuntimeError):
@@ -97,6 +97,53 @@ class IngestionService:
         self.on_published = on_published
         self._futures: dict[str, Any] = {}
         self._lock = threading.Lock()
+        self._fail_interrupted_runs()
+
+    def _fail_interrupted_runs(self) -> None:
+        import psycopg
+        from psycopg.types.json import Jsonb
+
+        interrupted = ("accepted", "parsing", "weknora_preparing", "validating", "publishing")
+        with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE ingestion_runs
+                   SET status='failed',
+                       error_message='service_restarted_before_ingestion_completed',
+                       stage_failures=%s,
+                       updated_at=now()
+                 WHERE status = ANY(%s)
+                RETURNING university_id, version_id
+                """,
+                (Jsonb([{
+                    "stage": "runtime",
+                    "reason": "service_restarted_before_ingestion_completed",
+                }]), list(interrupted)),
+            )
+            interrupted_versions = cursor.fetchall()
+            for university_id, version_id in interrupted_versions:
+                cursor.execute(
+                    """
+                    UPDATE school_versions
+                       SET publication_state='failed'
+                     WHERE university_id=%s AND version_id=%s
+                       AND publication_state='staging'
+                    """,
+                    (university_id, version_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE universities SET status=CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM school_versions
+                         WHERE university_id=%s AND publication_state='current'
+                      )
+                      THEN 'active' ELSE 'failed' END,
+                      updated_at=now()
+                    WHERE university_id=%s
+                    """,
+                    (university_id, university_id),
+                )
 
     @classmethod
     def from_env(cls) -> "IngestionService | None":
@@ -156,7 +203,7 @@ class IngestionService:
             "country_code": country_code.upper() if country_code else None,
             "region": region,
             "aliases": sorted(set(aliases or [])),
-            "weknora_knowledge_base_id": target_kb_id or f"create:{run_id}",
+            "weknora_knowledge_base_id": target_kb_id or "create",
         }
         input_hash = build_ingestion_input_hash(content, requested_metadata)
         version_id = f"ver_{university_id}_{input_hash[:16]}"
@@ -248,15 +295,16 @@ class IngestionService:
         kb_operation: str,
         target_kb_id: str | None,
     ) -> None:
-        import psycopg
-        from psycopg.types.json import Jsonb
-        from catalog_parser.adapters import parse_school_markdown
-        from catalog_parser.postgres_loader import load_dataset, publish_school_version, stage_school_records, activate_school_version, upsert_university
-        from indexer.opensearch_publisher import activate_published_school, audit_staged_school, publish_school
-
-        normalized_dir = run_dir / "normalized"
-        normalized_dir.mkdir(parents=True, exist_ok=True)
         try:
+            import psycopg
+            from psycopg.types.json import Jsonb
+            from catalog_parser.adapters import parse_school_markdown
+            from catalog_parser.postgres_loader import load_dataset, publish_school_version, stage_school_records, activate_school_version, upsert_university
+            from indexer.opensearch_publisher import activate_published_school, audit_staged_school, publish_school
+
+            normalized_dir = run_dir / "normalized"
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            self._set_run_status(run_id, "parsing")
             try:
                 result = parse_school_markdown(university_id, raw_path, fallback_adapter_name="auto")
             except ValueError as exc:
@@ -293,7 +341,8 @@ class IngestionService:
                 markdown_text=raw_path.read_text("utf-8"),
                 parser_summary=result.summary,
             )
-            resolved_kb_id, resolved_kb_name = self._resolve_weknora_knowledge_base(
+            resolved_kb_id, resolved_kb_name = self._prepare_weknora_knowledge_base(
+                run_id,
                 kb_operation,
                 target_kb_id,
                 university_id,
@@ -421,6 +470,9 @@ class IngestionService:
             if self.on_published:
                 self.on_published()
         except Exception as exc:  # noqa: BLE001 - failure is persisted for status polling.
+            import psycopg
+            from psycopg.types.json import Jsonb
+
             failure = (
                 {"stage": exc.stage, "reason": str(exc), "audit": exc.report}
                 if isinstance(exc, QualityGateError)
@@ -447,6 +499,35 @@ class IngestionService:
                         """,
                         (university_id, university_id),
                     )
+
+    def _set_run_status(self, run_id: str, status: str) -> None:
+        import psycopg
+
+        with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE ingestion_runs SET status=%s, updated_at=now() WHERE run_id=%s",
+                (status, run_id),
+            )
+
+    def _prepare_weknora_knowledge_base(
+        self,
+        run_id: str,
+        operation: str,
+        target_kb_id: str | None,
+        university_id: str,
+        university_name: str,
+    ) -> tuple[str | None, str | None]:
+        from .weknora_worker import weknora_import_enabled
+
+        if not weknora_import_enabled():
+            return target_kb_id, None
+        self._set_run_status(run_id, "weknora_preparing")
+        return self._resolve_weknora_knowledge_base(
+            operation,
+            target_kb_id,
+            university_id,
+            university_name,
+        )
 
     def _resolve_weknora_knowledge_base(
         self,

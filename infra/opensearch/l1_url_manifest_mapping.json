@@ -1,6 +1,8 @@
 {
   "settings": { "index": { "number_of_shards": 1, "number_of_replicas": 0 } },
   "mappings": {
+    "_meta": { "edumeta_schema_version": "2" },
+    "dynamic": false,
     "properties": {
       "url_id": { "type": "keyword" },
       "source_id": { "type": "keyword" },
@@ -12,6 +14,7 @@
       "url_type": { "type": "keyword" },
       "topics": { "type": "keyword" },
       "official_source": { "type": "boolean" },
+      "priority": { "type": "long" },
       "weknora_collection_id": { "type": "keyword" },
       "weknora_knowledge_id": { "type": "keyword" },
       "weknora_document_id": { "type": "keyword" },

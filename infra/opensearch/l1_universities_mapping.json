@@ -4,6 +4,7 @@
     "analysis": { "normalizer": { "lowercase": { "type": "custom", "filter": ["lowercase"] } } }
   },
   "mappings": {
+    "_meta": { "edumeta_schema_version": "2" },
     "dynamic": "strict",
     "properties": {
       "university_id": { "type": "keyword" },

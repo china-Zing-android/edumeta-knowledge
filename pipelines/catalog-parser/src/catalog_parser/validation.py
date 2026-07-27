@@ -142,21 +142,26 @@ def _url_integrity_issue(value: Any) -> str | None:
     return None
 
 
-def _descriptor_mentions_degree(row: dict[str, Any], degree: str) -> bool:
-    descriptor = " ".join(
-        str(row.get(field) or "")
-        for field in ("program_name", "degree_full_name")
-    ).lower()
+def _url_path_mentions_degree(url_path: str, degree: str) -> bool:
     patterns = {
-        "SM": r"\b(?:m\.?s|s\.?m|m\.?a|master)\b",
-        "MEng": r"\bm\.?eng\b|master of engineering",
-        "MArch": r"\bm\.?arch\b|master of architecture",
-        "MBA": r"\bmba\b|master of business administration",
-        "PhD": r"\bph\.?d\b|doctor of philosophy",
-        "Minor": r"\bminor\b|辅修",
+        "SB": r"(?:^|[-_])(?:ba|bs|sb|bachelor|major)(?:[-_]|$)",
+        "SM": r"(?:^|[-_])(?:ma|ms|mse|sm|master|masters)(?:[-_]|$)",
+        "MEng": r"(?:^|[-_])(?:meng|master-of-engineering)(?:[-_]|$)",
+        "MArch": r"(?:^|[-_])(?:march|master-of-architecture)(?:[-_]|$)",
+        "MCP": r"(?:^|[-_])mcp(?:[-_]|$)",
+        "MASc": r"(?:^|[-_])masc(?:[-_]|$)",
+        "MBA": r"(?:^|[-_])mba(?:[-_]|$)",
+        "MBAn": r"(?:^|[-_])mban(?:[-_]|$)",
+        "MFin": r"(?:^|[-_])mfin(?:[-_]|$)",
+        "MSMS": r"(?:^|[-_])msms(?:[-_]|$)",
+        "PhD": r"(?:^|[-_])phd(?:[-_]|$)",
+        "ScD": r"(?:^|[-_])scd(?:[-_]|$)",
+        "Minor": r"(?:^|[-_])minor(?:[-_]|$)",
+        "Certificate": r"(?:^|[-_])(?:certificate|cert)(?:[-_]|$)",
     }
-    pattern = patterns.get(degree)
-    return bool(pattern and re.search(pattern, descriptor))
+    pattern = patterns.get(str(degree))
+    normalized_path = re.sub(r"/+", "-", url_path.strip("/").lower())
+    return bool(pattern and re.search(pattern, normalized_path))
 
 
 def declared_catalog_expectation(markdown_text: str | None) -> dict[str, Any] | None:
@@ -236,14 +241,20 @@ def catalog_quality_audit(
             reason = "graduate_degree_marked_undergraduate"
         elif level == "graduate" and degree in {"SB", "Minor"}:
             reason = "undergraduate_degree_marked_graduate"
-        url_slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
-        if not reason and re.search(r"(?:^|[-_])minor(?:[-_]|$)", url_slug) and degree != "Minor":
+        url_path = urlparse(url).path
+        url_slug = url_path.rstrip("/").rsplit("/", 1)[-1]
+        if (
+            not reason
+            and re.search(r"(?:^|[-_])minor(?:[-_]|$)", url_slug)
+            and degree != "Minor"
+            and not _url_path_mentions_degree(url_path, str(degree))
+        ):
             reason = "minor_url_degree_mismatch"
         elif (
             not reason
             and re.search(r"(?:^|[-_])phd(?:[-_]|$)", url_slug)
             and degree != "PhD"
-            and not (_descriptor_mentions_degree(row, degree) and re.search(r"\bph\.?d\b", str(row.get("program_name") or "").lower()))
+            and not _url_path_mentions_degree(url_path, str(degree))
         ):
             reason = "phd_url_degree_mismatch"
         if reason:

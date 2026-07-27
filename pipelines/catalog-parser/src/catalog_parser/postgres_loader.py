@@ -423,6 +423,7 @@ def stage_school_records(
         "catalog_entry_disciplines": discipline_rows,
         "entity_contexts": dataset.get("entity_contexts", []),
     }
+    staging_values: list[tuple[Any, ...]] = []
     for entity_name, records in entity_record_sets.items():
         pk_field = "link_id" if entity_name in {"source_entry_links", "catalog_entry_disciplines"} else {
             "source_registry": "source_id",
@@ -431,24 +432,25 @@ def stage_school_records(
             "entity_contexts": "context_id",
         }[entity_name]
         for record in records:
-            cursor.execute(
-                """
-                INSERT INTO ingestion_records
-                  (run_id, entity_name, record_id, university_id, record_hash, record)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (run_id, entity_name, record_id)
-                DO UPDATE SET record_hash=EXCLUDED.record_hash, record=EXCLUDED.record
-                """,
-                (
-                    run_id,
-                    entity_name,
-                    record[pk_field],
-                    university_id,
-                    record_hash(record),
-                    Jsonb(record),
-                ),
-            )
+            staging_values.append((
+                run_id,
+                entity_name,
+                record[pk_field],
+                university_id,
+                record_hash(record),
+                Jsonb(record),
+            ))
         counts[entity_name] = len(records)
+    if staging_values:
+        with cursor.copy(
+            """
+            COPY ingestion_records
+              (run_id, entity_name, record_id, university_id, record_hash, record)
+            FROM STDIN
+            """
+        ) as copy:
+            for values in staging_values:
+                copy.write_row(values)
     counts["url_manifest"] = len(dataset.get("url_manifest", []))  # informational
     return counts
 
@@ -493,59 +495,61 @@ def publish_school_version(
     for entity_name, record in cursor.fetchall():
         by_entity.setdefault(entity_name, []).append(record)
 
-    for source_row in by_entity.get("source_registry", []):
-        cols = list(source_row.keys())
-        placeholders = ", ".join(["%s"] * len(cols))
-        cursor.execute(
-            f"INSERT INTO source_registry ({', '.join(cols)}) VALUES ({placeholders}) "
-            "ON CONFLICT (university_id, version_id, source_id) DO NOTHING",
-            _bind_values(source_row, cols),
-        )
-    report["promoted"]["source_registry"] = len(by_entity.get("source_registry", []))
+    with connection.pipeline():
+        for source_row in by_entity.get("source_registry", []):
+            cols = list(source_row.keys())
+            placeholders = ", ".join(["%s"] * len(cols))
+            cursor.execute(
+                f"INSERT INTO source_registry ({', '.join(cols)}) VALUES ({placeholders}) "
+                "ON CONFLICT (university_id, version_id, source_id) DO NOTHING",
+                _bind_values(source_row, cols),
+            )
+        report["promoted"]["source_registry"] = len(by_entity.get("source_registry", []))
 
-    for entry in by_entity.get("catalog_entries", []):
-        _promote_catalog_entry(cursor, university_id, version_id, entry)
-    report["promoted"]["catalog_entries"] = len(by_entity.get("catalog_entries", []))
+        for entry in by_entity.get("catalog_entries", []):
+            _promote_catalog_entry(cursor, university_id, version_id, entry)
+        report["promoted"]["catalog_entries"] = len(by_entity.get("catalog_entries", []))
 
-    for relation in by_entity.get("catalog_entry_disciplines", []):
-        cursor.execute(
-            """
-            INSERT INTO catalog_entry_disciplines
-              (link_id, university_id, version_id, entry_id, discipline_id,
-               discipline_label, match_method, confidence)
-            VALUES (%(link_id)s, %(university_id)s, %(version_id)s, %(entry_id)s,
-                    %(discipline_id)s, %(discipline_label)s, %(match_method)s, %(confidence)s)
-            ON CONFLICT (university_id, version_id, entry_id, discipline_id)
-            DO UPDATE SET discipline_label=EXCLUDED.discipline_label,
-                          match_method=EXCLUDED.match_method,
-                          confidence=EXCLUDED.confidence
-            """,
-            relation,
-        )
-    report["promoted"]["catalog_entry_disciplines"] = len(by_entity.get("catalog_entry_disciplines", []))
+        for relation in by_entity.get("catalog_entry_disciplines", []):
+            cursor.execute(
+                """
+                INSERT INTO catalog_entry_disciplines
+                  (link_id, university_id, version_id, entry_id, discipline_id,
+                   discipline_label, match_method, confidence)
+                VALUES (%(link_id)s, %(university_id)s, %(version_id)s, %(entry_id)s,
+                        %(discipline_id)s, %(discipline_label)s, %(match_method)s, %(confidence)s)
+                ON CONFLICT (university_id, version_id, entry_id, discipline_id)
+                DO UPDATE SET discipline_label=EXCLUDED.discipline_label,
+                              match_method=EXCLUDED.match_method,
+                              confidence=EXCLUDED.confidence
+                """,
+                relation,
+            )
+        report["promoted"]["catalog_entry_disciplines"] = len(by_entity.get("catalog_entry_disciplines", []))
 
-    for fact in by_entity.get("fact_store", []):
-        _promote_fact(cursor, university_id, version_id, fact)
-    report["promoted"]["fact_store"] = len(by_entity.get("fact_store", []))
+        for fact in by_entity.get("fact_store", []):
+            _promote_fact(cursor, university_id, version_id, fact)
+        report["promoted"]["fact_store"] = len(by_entity.get("fact_store", []))
 
-    for context in by_entity.get("entity_contexts", []):
-        _promote_entity_context(cursor, university_id, version_id, context)
-    report["promoted"]["entity_contexts"] = len(by_entity.get("entity_contexts", []))
+        for context in by_entity.get("entity_contexts", []):
+            _promote_entity_context(cursor, university_id, version_id, context)
+        report["promoted"]["entity_contexts"] = len(by_entity.get("entity_contexts", []))
 
-    for link in by_entity.get("source_entry_links", []):
-        link = {**link, "topics": Jsonb(link.get("topics") or [])}
-        cursor.execute(
-            """
-            INSERT INTO source_entry_links
-              (link_id, source_id, target_entity, target_id, university_id, version_id, topics)
-            VALUES (%(link_id)s, %(source_id)s, %(target_entity)s, %(target_id)s, %(university_id)s, %(version_id)s, %(topics)s)
-            ON CONFLICT (university_id, version_id, source_id, target_entity, target_id)
-            DO UPDATE SET topics=EXCLUDED.topics
-            """,
-            link,
-        )
-    report["promoted"]["source_entry_links"] = len(by_entity.get("source_entry_links", []))
+        for link in by_entity.get("source_entry_links", []):
+            link = {**link, "topics": Jsonb(link.get("topics") or [])}
+            cursor.execute(
+                """
+                INSERT INTO source_entry_links
+                  (link_id, source_id, target_entity, target_id, university_id, version_id, topics)
+                VALUES (%(link_id)s, %(source_id)s, %(target_entity)s, %(target_id)s, %(university_id)s, %(version_id)s, %(topics)s)
+                ON CONFLICT (university_id, version_id, source_id, target_entity, target_id)
+                DO UPDATE SET topics=EXCLUDED.topics
+                """,
+                link,
+            )
+        report["promoted"]["source_entry_links"] = len(by_entity.get("source_entry_links", []))
 
+    cursor.execute("DELETE FROM ingestion_records WHERE run_id=%s", (run_id,))
     if activate:
         activate_school_version(cursor, university_id=university_id, version_id=version_id, run_id=run_id)
     return report

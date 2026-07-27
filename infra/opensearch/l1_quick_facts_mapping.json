@@ -1,6 +1,8 @@
 {
   "settings": { "index": { "number_of_shards": 1, "number_of_replicas": 0 } },
   "mappings": {
+    "_meta": { "edumeta_schema_version": "2" },
+    "dynamic": false,
     "properties": {
       "fact_id": { "type": "keyword" },
       "university_id": { "type": "keyword" },
@@ -9,7 +11,7 @@
       "fact_type": { "type": "keyword" },
       "fact_key": { "type": "keyword" },
       "raw_value": { "type": "text" },
-      "normalized_value": { "type": "object", "enabled": true },
+      "normalized_value": { "type": "object", "dynamic": false },
       "admission_cycle": { "type": "keyword" },
       "term": { "type": "keyword" },
       "source_id": { "type": "keyword" },
@@ -24,4 +26,3 @@
     }
   }
 }
-

@@ -182,6 +182,89 @@ class ProgramScopedMsearchClient:
         ]}
 
 
+class AmbiguousProgramMsearchClient:
+    @staticmethod
+    def _hits(*rows: dict) -> dict:
+        return {
+            "hits": {
+                "hits": [
+                    {"_score": float(len(rows) - index), "_source": row}
+                    for index, row in enumerate(rows)
+                ]
+            }
+        }
+
+    def msearch(self, *, body):
+        catalog = self._hits(
+            {
+                "entry_id": "ent_joint",
+                "program_name": "Commerce and Computer Science",
+                "level": "undergraduate",
+            },
+            {
+                "entry_id": "ent_exact",
+                "program_name": "Computer Science",
+                "level": "undergraduate",
+            },
+        )
+        contexts = self._hits(
+            {
+                "entity_type": "program",
+                "entity_id": "ent_joint",
+                "entry_id": "ent_joint",
+                "title": "Commerce and Computer Science",
+                "display_label": "Commerce and Computer Science",
+                "source_ids": [],
+            },
+            {
+                "entity_type": "program",
+                "entity_id": "ent_exact",
+                "entry_id": "ent_exact",
+                "title": "Computer Science",
+                "display_label": "Computer Science",
+                "source_ids": [],
+            },
+        )
+        return {"responses": [catalog, self._hits(), self._hits(), contexts]}
+
+
+class QualifiedProgramMsearchClient(AmbiguousProgramMsearchClient):
+    def msearch(self, *, body):
+        catalog = self._hits(
+            {
+                "entry_id": "ent_honours",
+                "program_name": "Agricultural Economics Honours",
+                "level": "undergraduate",
+                "degree_level": "SB",
+            },
+            {
+                "entry_id": "ent_major",
+                "program_name": "Agricultural Economics Major",
+                "level": "undergraduate",
+                "degree_level": "SB",
+            },
+        )
+        contexts = self._hits(
+            {
+                "entity_type": "program",
+                "entity_id": "ent_honours",
+                "entry_id": "ent_honours",
+                "title": "Agricultural Economics Honours",
+                "display_label": "Agricultural Economics Honours",
+                "source_ids": [],
+            },
+            {
+                "entity_type": "program",
+                "entity_id": "ent_major",
+                "entry_id": "ent_major",
+                "title": "Agricultural Economics Major",
+                "display_label": "Agricultural Economics Major",
+                "source_ids": [],
+            },
+        )
+        return {"responses": [catalog, self._hits(), self._hits(), contexts]}
+
+
 class DiscoveryContextRetrievalTests(unittest.TestCase):
     def setUp(self) -> None:
         self.l1 = FakeL1()
@@ -290,6 +373,38 @@ class DiscoveryContextRetrievalTests(unittest.TestCase):
                     self.assertIn(expected_filter, catalog_bool["filter"])
                 if expected_must_not:
                     self.assertIn(expected_must_not, catalog_bool["must_not"])
+
+    def test_exact_standalone_program_outranks_joint_program(self) -> None:
+        client = OpenSearchRetrievalClient(
+            "http://unused",
+            CurrentVersionMap(initial={"monash_university": "monash_v2"}),
+            client=AmbiguousProgramMsearchClient(),
+        )
+
+        result = client.search(
+            query="Monash 有 Computer Science 本科吗？",
+            university_id="monash_university",
+            dataset_version="monash_v2",
+        )
+
+        self.assertEqual(result.catalog[0]["program_name"], "Computer Science")
+        self.assertEqual(result.contexts[0]["title"], "Computer Science")
+
+    def test_explicit_program_qualifier_outranks_other_variants(self) -> None:
+        client = OpenSearchRetrievalClient(
+            "http://unused",
+            CurrentVersionMap(initial={"mcgill_university": "mcgill_v2"}),
+            client=QualifiedProgramMsearchClient(),
+        )
+
+        result = client.search(
+            query="McGill 有 Agricultural Economics Major 吗？",
+            university_id="mcgill_university",
+            dataset_version="mcgill_v2",
+        )
+
+        self.assertEqual(result.catalog[0]["program_name"], "Agricultural Economics Major")
+        self.assertEqual(result.contexts[0]["title"], "Agricultural Economics Major")
 
     def test_explicit_entry_context_scopes_source_query_before_top_k(self) -> None:
         fake = RecordingMsearchClient()

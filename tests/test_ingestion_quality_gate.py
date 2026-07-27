@@ -5,14 +5,39 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
-from fast_router.ingestion import QualityGateError, run_pre_publish_audit
+from fast_router.ingestion import IngestionService, QualityGateError, run_pre_publish_audit
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class IngestionQualityGateTests(unittest.TestCase):
+    def test_service_startup_reconciles_interrupted_in_memory_runs(self) -> None:
+        connection = MagicMock()
+        transaction = MagicMock()
+        cursor = MagicMock()
+        connection.transaction.return_value.__enter__.return_value = transaction
+        connection.cursor.return_value.__enter__.return_value = cursor
+        cursor.execute.return_value = None
+        cursor.fetchall.return_value = [("mit", "ver_interrupted")]
+
+        psycopg = MagicMock()
+        psycopg.connect.return_value.__enter__.return_value = connection
+        jsonb = Mock(side_effect=lambda value: value)
+        with patch.dict("sys.modules", {
+            "psycopg": psycopg,
+            "psycopg.types.json": Mock(Jsonb=jsonb),
+        }):
+            service = object.__new__(IngestionService)
+            service.postgres_dsn = "postgresql://unused"
+            service._fail_interrupted_runs()
+
+        statements = [call.args[0] for call in cursor.execute.call_args_list]
+        self.assertTrue(any("service_restarted_before_ingestion_completed" in sql for sql in statements))
+        self.assertTrue(any("publication_state='failed'" in sql for sql in statements))
+
     def test_pre_publish_audit_blocks_invalid_catalog_before_staging(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "normalized"

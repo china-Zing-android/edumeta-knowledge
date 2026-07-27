@@ -90,14 +90,14 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
   input_hash          TEXT NOT NULL,          -- sha256 of the MD, used to detect unchanged input
   weknora_knowledge_base_id TEXT,
   weknora_kb_operation TEXT NOT NULL DEFAULT 'reuse', -- create | reuse | explicit
-  status              TEXT NOT NULL,          -- accepted|unchanged|validating|publishing|published|failed
+  status              TEXT NOT NULL,          -- accepted|parsing|weknora_preparing|unchanged|validating|publishing|published|failed
   stage_failures      JSONB NOT NULL DEFAULT '[]'::jsonb,
   quality_audits      JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_message       TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT chk_run_status
-    CHECK (status IN ('accepted', 'unchanged', 'validating', 'publishing', 'published', 'failed')),
+    CHECK (status IN ('accepted', 'parsing', 'weknora_preparing', 'unchanged', 'validating', 'publishing', 'published', 'failed')),
   CONSTRAINT chk_run_tier
     CHECK (school_tier IN ('core', 'non_core')),
   CONSTRAINT chk_run_operation

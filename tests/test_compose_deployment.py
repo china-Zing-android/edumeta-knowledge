@@ -27,6 +27,12 @@ def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() ->
     assert services["tool-gateway"]["depends_on"]["fast-router"]["condition"] == "service_healthy"
 
 
+def test_postgres_has_enough_shared_memory_for_vacuuming_ingestion_tables() -> None:
+    payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
+
+    assert payload["services"]["postgres"]["shm_size"] == "256mb"
+
+
 def test_only_api_services_have_configurable_private_bind_hosts() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
     services = payload["services"]

@@ -3,13 +3,54 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from fast_router.ingestion import resolve_weknora_kb_request
+from fast_router.ingestion import IngestionService, resolve_weknora_kb_request
 from fast_router.weknora_worker import WeknoraJobWorker
 
 
 class WeknoraKBRoutingTests(unittest.TestCase):
+    def test_disabled_import_skips_synchronous_kb_control_plane_call(self) -> None:
+        service = object.__new__(IngestionService)
+        service._resolve_weknora_knowledge_base = Mock(return_value=("unexpected", "unexpected"))
+        service._set_run_status = Mock()
+
+        with patch.dict(os.environ, {"WEKNORA_IMPORT_ENABLED": "false"}):
+            resolved = service._prepare_weknora_knowledge_base(
+                "run_1",
+                "reuse",
+                "kb_existing",
+                "mit",
+                "MIT",
+            )
+
+        self.assertEqual(resolved, ("kb_existing", None))
+        service._resolve_weknora_knowledge_base.assert_not_called()
+        service._set_run_status.assert_not_called()
+
+    def test_enabled_import_reports_preparation_and_calls_kb_control_plane(self) -> None:
+        service = object.__new__(IngestionService)
+        service._resolve_weknora_knowledge_base = Mock(return_value=("kb_existing", "MIT KB"))
+        service._set_run_status = Mock()
+
+        with patch.dict(os.environ, {"WEKNORA_IMPORT_ENABLED": "true"}):
+            resolved = service._prepare_weknora_knowledge_base(
+                "run_1",
+                "reuse",
+                "kb_existing",
+                "mit",
+                "MIT",
+            )
+
+        self.assertEqual(resolved, ("kb_existing", "MIT KB"))
+        service._set_run_status.assert_called_once_with("run_1", "weknora_preparing")
+        service._resolve_weknora_knowledge_base.assert_called_once_with(
+            "reuse",
+            "kb_existing",
+            "mit",
+            "MIT",
+        )
+
     def test_worker_is_disabled_by_import_gate_without_disabling_search_configuration(self) -> None:
         with patch.dict(
             os.environ,
@@ -27,6 +68,7 @@ class WeknoraKBRoutingTests(unittest.TestCase):
         source = Path("apps/fast-router/src/fast_router/weknora_worker.py").read_text("utf-8")
 
         self.assertIn("ORDER BY jobs.updated_at, jobs.created_at", source)
+        self.assertIn("jobs.knowledge_base_id IS NOT NULL", source)
 
     def test_resolve_request_prefers_explicit_then_existing_then_create(self) -> None:
         self.assertEqual(resolve_weknora_kb_request("kb_old", "kb_new", False), ("explicit", "kb_new"))

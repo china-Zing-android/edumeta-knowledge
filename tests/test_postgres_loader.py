@@ -10,6 +10,8 @@ from catalog_parser.postgres_loader import (
     dry_run_report,
     load_dataset,
     read_jsonl,
+    publish_school_version,
+    stage_school_records,
 )
 
 # PG-backed tests are only run when a test DSN is available; otherwise the
@@ -24,6 +26,125 @@ def _need_pg(testcase):
 
 
 class PostgresLoaderUnitTests(unittest.TestCase):
+    def test_staging_uses_one_bulk_database_operation(self) -> None:
+        class CopyContext:
+            def __init__(self, cursor) -> None:
+                self.cursor = cursor
+
+            def __enter__(self):
+                return self
+
+            def write_row(self, row):
+                self.cursor.copy_rows.append(row)
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+        class RecordingCursor:
+            def __init__(self) -> None:
+                self.execute_calls = []
+                self.executemany_calls = []
+                self.copy_calls = []
+                self.copy_rows = []
+
+            def execute(self, sql, params=None):
+                self.execute_calls.append((sql, params))
+
+            def executemany(self, sql, params):
+                self.executemany_calls.append((sql, list(params)))
+
+            def copy(self, sql):
+                self.copy_calls.append(sql)
+                return CopyContext(self)
+
+        cursor = RecordingCursor()
+        dataset = {
+            "source_registry": [{
+                "source_id": "src_example",
+                "canonical_url": "https://example.edu/catalog",
+                "source_url": "https://example.edu/catalog",
+                "url_type": "catalog",
+                "topics": ["catalog"],
+                "official_source": True,
+                "priority": 1,
+                "capture_date": "2026-07-27",
+                "dataset_version": "example_v1",
+                "entry_ids": ["ent_example"],
+            }],
+            "url_manifest": [{
+                "source_id": "src_example",
+                "entry_ids": ["ent_example"],
+                "topics": ["catalog"],
+            }],
+            "catalog_entries": [{
+                "entry_id": "ent_example",
+                "discipline_ids": ["computer_science"],
+                "discipline_labels": ["Computer Science"],
+            }],
+            "quick_facts": [],
+            "entity_contexts": [],
+        }
+
+        counts = stage_school_records(
+            cursor,
+            run_id="run_example",
+            university_id="example",
+            version_id="ver_example",
+            dataset=dataset,
+        )
+
+        self.assertEqual(len(cursor.copy_calls), 1)
+        self.assertEqual(cursor.executemany_calls, [])
+        self.assertEqual(cursor.execute_calls, [])
+        self.assertEqual(len(cursor.copy_rows), 4)
+        self.assertEqual(counts["catalog_entries"], 1)
+
+    def test_promotion_sends_independent_inserts_through_pipeline(self) -> None:
+        class RecordingCursor:
+            def __init__(self) -> None:
+                self.execute_calls = []
+
+            def execute(self, sql, params=None):
+                self.execute_calls.append((sql, params))
+
+            def fetchall(self):
+                return []
+
+        class PipelineContext:
+            def __init__(self, connection) -> None:
+                self.connection = connection
+
+            def __enter__(self):
+                self.connection.pipeline_entries += 1
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+        class RecordingConnection:
+            def __init__(self) -> None:
+                self.recording_cursor = RecordingCursor()
+                self.pipeline_entries = 0
+
+            def cursor(self):
+                return self.recording_cursor
+
+            def pipeline(self):
+                return PipelineContext(self)
+
+        connection = RecordingConnection()
+
+        report = publish_school_version(
+            connection,
+            run_id="run_example",
+            university_id="example",
+            version_id="ver_example",
+            input_hash="hash",
+            activate=False,
+        )
+
+        self.assertEqual(connection.pipeline_entries, 1)
+        self.assertEqual(report["promoted"]["catalog_entries"], 0)
+
     def test_active_weknora_job_uniqueness_is_scoped_by_knowledge_base(self) -> None:
         schema = (Path("infra/postgres/001_initial_schema.sql")).read_text("utf-8")
 
@@ -49,6 +170,12 @@ class PostgresLoaderUnitTests(unittest.TestCase):
 
         self.assertIn("CREATE TABLE IF NOT EXISTS entity_contexts", schema)
         self.assertIn("PRIMARY KEY (university_id, version_id, context_id)", schema)
+
+    def test_ingestion_status_constraint_covers_observable_progress_stages(self) -> None:
+        schema = Path("infra/postgres/001_initial_schema.sql").read_text("utf-8")
+
+        self.assertIn("'parsing'", schema)
+        self.assertIn("'weknora_preparing'", schema)
 
     def test_build_upsert_sql_targets_primary_key(self) -> None:
         sql = build_upsert_sql("catalog_entries", "entry_id", ["entry_id", "university_id", "program_name"])
@@ -298,6 +425,12 @@ class PostgresVersioningTests(unittest.TestCase):
             )
             self.assertEqual(cursor.fetchone()[0], 2)
 
+            cursor.execute(
+                "SELECT count(*) FROM ingestion_records WHERE run_id=%s",
+                (report["run_id"],),
+            )
+            self.assertEqual(cursor.fetchone()[0], 0)
+
     def test_new_version_enqueues_continuation_for_nonterminal_weknora_source(self) -> None:
         from fast_router.ingestion import IngestionService
 
@@ -492,8 +625,10 @@ class PostgresVersioningTests(unittest.TestCase):
                 cursor.execute(
                     """
                     INSERT INTO weknora_import_jobs
-                      (job_id, source_id, run_id, university_id, version_id, status, source_url)
-                    VALUES ('wkj_current', %s, %s, %s, %s, 'queued', 'https://catalog.example.edu/cs')
+                      (job_id, source_id, run_id, university_id, version_id,
+                       knowledge_base_id, status, source_url)
+                    VALUES ('wkj_current', %s, %s, %s, %s, 'kb_unitu', 'queued',
+                            'https://catalog.example.edu/cs')
                     """,
                     (
                         f"src_{self.university_id}_catalog_example_edu_cs",
@@ -525,8 +660,10 @@ class PostgresVersioningTests(unittest.TestCase):
                 cursor.execute(
                     """
                     INSERT INTO weknora_import_jobs
-                      (job_id, source_id, run_id, university_id, version_id, status, source_url)
-                    VALUES ('wkj_old', %s, %s, %s, 'ver_unitu_old', 'queued', 'https://catalog.example.edu/old')
+                      (job_id, source_id, run_id, university_id, version_id,
+                       knowledge_base_id, status, source_url)
+                    VALUES ('wkj_old', %s, %s, %s, 'ver_unitu_old', 'kb_unitu', 'queued',
+                            'https://catalog.example.edu/old')
                     """,
                     (
                         "src_unitu_old",

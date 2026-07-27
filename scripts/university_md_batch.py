@@ -23,6 +23,9 @@ for source_root in (
     if str(source_root) not in sys.path:
         sys.path.insert(0, str(source_root))
 
+from fast_router.ingestion import PARSER_CONTRACT_VERSION
+
+
 DEFAULT_DATA_ROOT = ROOT / "data/raw-md/universities"
 DEFAULT_MANIFEST = DEFAULT_DATA_ROOT / "manifest.jsonl"
 DEFAULT_PREFLIGHT = DEFAULT_DATA_ROOT / "preflight-results.jsonl"
@@ -243,6 +246,7 @@ def pending_rows(
             state.get("status") in {"published", "unchanged"}
             and state.get("content_sha256") == record.get("content_sha256")
             and state.get("audit_version") == audit_version
+            and state.get("parser_contract_version") == PARSER_CONTRACT_VERSION
         )
         if not reusable:
             pending.append(record)
@@ -288,6 +292,7 @@ def run_preflight(record: dict[str, Any], data_root: Path) -> dict[str, Any]:
             "content_sha256": record.get("content_sha256"),
             "status": status,
             "parser_adapter": result.summary.get("parser_adapter", record.get("parser_adapter")),
+            "parser_contract_version": PARSER_CONTRACT_VERSION,
             "counts": validation.get("counts", {}),
             "failures": failures,
             "review_reasons": review_reasons,
@@ -481,6 +486,7 @@ def main() -> None:
                     "status": terminal.get("status"),
                     "content_sha256": record.get("content_sha256"),
                     "audit_version": (preflight_by_id.get(record["university_id"], {}).get("quality_audit") or {}).get("audit_version"),
+                    "parser_contract_version": PARSER_CONTRACT_VERSION,
                     "counts": terminal.get("counts", {}),
                     "weknora_jobs": terminal.get("weknora_jobs", {}),
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
@@ -492,6 +498,7 @@ def main() -> None:
                     "status": "failed",
                     "content_sha256": record.get("content_sha256"),
                     "audit_version": (preflight_by_id.get(record["university_id"], {}).get("quality_audit") or {}).get("audit_version"),
+                    "parser_contract_version": PARSER_CONTRACT_VERSION,
                     "error": str(exc),
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
                 }

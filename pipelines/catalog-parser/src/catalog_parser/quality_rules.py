@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 
-QUALITY_RULESET_VERSION = "2026-07-24.1"
+QUALITY_RULESET_VERSION = "2026-07-27.1"
 
 QUALITY_RULES: dict[str, dict[str, str]] = {
     "CAT-ENTITY-001": {"category": "entity_validity", "description": "Reject summary, taxonomy, URL, numeric, and policy values as catalog entities."},

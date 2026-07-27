@@ -116,6 +116,7 @@ class WeknoraJobWorker:
                      AND versions.version_id=jobs.version_id
                      AND versions.publication_state='current'
                    WHERE jobs.status='queued'
+                     AND jobs.knowledge_base_id IS NOT NULL
                      AND (jobs.next_attempt_at IS NULL OR jobs.next_attempt_at<=now())
                    ORDER BY jobs.updated_at, jobs.created_at
                    FOR UPDATE OF jobs SKIP LOCKED

@@ -4,10 +4,80 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from indexer.opensearch_publisher import audit_staged_school, bulk_actions, dry_run_report, load_publish_plan, publish_school
+from indexer.opensearch_publisher import (
+    _ensure_index_and_alias,
+    audit_staged_school,
+    bulk_actions,
+    dry_run_report,
+    load_publish_plan,
+    publish_school,
+)
 
 
 class OpenSearchPublisherTests(unittest.TestCase):
+    def test_new_index_waits_for_primary_shard_before_aliasing(self) -> None:
+        calls: list[str] = []
+
+        class FakeIndices:
+            def exists(self, **kwargs):
+                return False
+
+            def create(self, **kwargs):
+                calls.append("create")
+
+            def get_alias(self, **kwargs):
+                calls.append("get_alias")
+                return {}
+
+            def put_alias(self, **kwargs):
+                calls.append("put_alias")
+
+        class FakeCluster:
+            def health(self, **kwargs):
+                calls.append("health")
+                self.kwargs = kwargs
+                return {"status": "yellow", "timed_out": False}
+
+        class FakeClient:
+            def __init__(self):
+                self.indices = FakeIndices()
+                self.cluster = FakeCluster()
+
+        item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
+        client = FakeClient()
+
+        _ensure_index_and_alias(client, item)
+
+        self.assertEqual(calls, ["create", "health", "get_alias", "put_alias"])
+        self.assertEqual(client.cluster.kwargs["index"], item["write_index"])
+        self.assertEqual(client.cluster.kwargs["timeout"], "120s")
+
+    def test_existing_index_mapping_is_upgraded_only_when_schema_version_changes(self) -> None:
+        mapping_updates: list[dict] = []
+
+        class FakeIndices:
+            def exists(self, **kwargs):
+                return True
+
+            def get_mapping(self, **kwargs):
+                return {kwargs["index"]: {"mappings": {"_meta": {"edumeta_schema_version": "1"}}}}
+
+            def put_mapping(self, **kwargs):
+                mapping_updates.append(kwargs)
+
+            def get_alias(self, **kwargs):
+                return {"l1_catalog_entries_v1": {}}
+
+        class FakeClient:
+            indices = FakeIndices()
+
+        item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
+        _ensure_index_and_alias(FakeClient(), item)
+
+        self.assertEqual(len(mapping_updates), 1)
+        self.assertEqual(mapping_updates[0]["body"]["_meta"]["edumeta_schema_version"], "2")
+        self.assertFalse(mapping_updates[0]["body"]["dynamic"])
+
     def test_post_index_audit_rejects_wrong_top_catalog_match(self) -> None:
         class FakeClient:
             def search(self, **kwargs):
@@ -30,11 +100,18 @@ class OpenSearchPublisherTests(unittest.TestCase):
 
     def test_staging_publish_does_not_deactivate_current_documents(self) -> None:
         class FakeIndices:
+            def __init__(self):
+                self.refresh_calls = []
+
             def exists(self, **kwargs):
                 return True
 
             def create(self, **kwargs):
                 return None
+
+            def get_mapping(self, **kwargs):
+                index = kwargs["index"]
+                return {index: {"mappings": {"_meta": {"edumeta_schema_version": "2"}}}}
 
             def put_mapping(self, **kwargs):
                 return None
@@ -46,6 +123,7 @@ class OpenSearchPublisherTests(unittest.TestCase):
                 return None
 
             def refresh(self, **kwargs):
+                self.refresh_calls.append(kwargs)
                 return None
 
         class FakeClient:
@@ -80,6 +158,7 @@ class OpenSearchPublisherTests(unittest.TestCase):
         )
 
         self.assertEqual(fake.update_calls, [])
+        self.assertEqual(len(fake.indices.refresh_calls), 1)
     def test_publish_plan_allows_empty_optional_entity_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir)

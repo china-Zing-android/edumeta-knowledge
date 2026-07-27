@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,19 @@ INDEX_SPECS: tuple[IndexSpec, ...] = (
     IndexSpec("sources", "url_manifest.jsonl", "source_id", "l1_sources_current", ROOT / "infra/opensearch/l1_url_manifest_mapping.json"),
     IndexSpec("entity_contexts", "entity_contexts.jsonl", "context_id", "l1_entity_contexts_current", ROOT / "infra/opensearch/l1_entity_contexts_mapping.json"),
 )
+
+
+def _new_client(opensearch_url: str) -> Any:
+    try:
+        from opensearchpy import OpenSearch
+    except ImportError as exc:
+        raise RuntimeError("opensearch-py is required for OpenSearch publishing") from exc
+    return OpenSearch(
+        opensearch_url,
+        timeout=float(os.getenv("OPENSEARCH_PUBLISH_TIMEOUT_SECONDS", "120")),
+        max_retries=1,
+        retry_on_timeout=True,
+    )
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -175,10 +189,30 @@ def bulk_actions(index_name: str, id_field: str, records: list[dict[str, Any]]) 
 def _ensure_index_and_alias(client: Any, item: dict[str, Any]) -> None:
     index_name = item["write_index"]
     mapping = json.loads(Path(item["mapping_path"]).read_text(encoding="utf-8"))
-    if not client.indices.exists(index=index_name):
+    created = not client.indices.exists(index=index_name)
+    if created:
         client.indices.create(index=index_name, body=mapping)
+        timeout_seconds = float(os.getenv("OPENSEARCH_PUBLISH_TIMEOUT_SECONDS", "120"))
+        health = client.cluster.health(
+            index=index_name,
+            wait_for_status="yellow",
+            wait_for_no_initializing_shards=True,
+            timeout=f"{timeout_seconds:g}s",
+            request_timeout=timeout_seconds + 5,
+        )
+        if health.get("timed_out") or health.get("status") not in {"yellow", "green"}:
+            raise RuntimeError(f"OpenSearch index did not become ready: {index_name}")
     else:
-        client.indices.put_mapping(index=index_name, body={"properties": mapping.get("mappings", {}).get("properties", {})})
+        expected_version = mapping.get("mappings", {}).get("_meta", {}).get("edumeta_schema_version")
+        current = client.indices.get_mapping(index=index_name)
+        current_version = (
+            current.get(index_name, {})
+            .get("mappings", {})
+            .get("_meta", {})
+            .get("edumeta_schema_version")
+        )
+        if expected_version and current_version != expected_version:
+            client.indices.put_mapping(index=index_name, body=mapping["mappings"])
     try:
         aliases = client.indices.get_alias(name=item["alias"])
     except Exception as exc:  # opensearch-py NotFoundError shape varies by version
@@ -202,14 +236,15 @@ def publish_school(
     plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
     if client is None or bulk_writer is None:
         try:
-            from opensearchpy import OpenSearch, helpers
+            from opensearchpy import helpers
         except ImportError as exc:
             raise RuntimeError("opensearch-py is required for OpenSearch publishing") from exc
-        client = client or OpenSearch(opensearch_url)
+        client = client or _new_client(opensearch_url)
         bulk_writer = bulk_writer or (
             lambda target, actions: helpers.bulk(target, actions, raise_on_error=False)
         )
     published: dict[str, Any] = {}
+    write_indexes: set[str] = set()
     for entity, item in plan.items():
         spec: IndexSpec = item["spec"]
         _ensure_index_and_alias(client, item)
@@ -223,7 +258,7 @@ def publish_school(
                 {"term": {"dataset_version": item["dataset_version"]}},
             ]}}},
             conflicts="proceed",
-            refresh=True,
+            refresh=False,
         )
         ok_count, errors = bulk_writer(
             client,
@@ -231,7 +266,15 @@ def publish_school(
         )
         if errors:
             raise RuntimeError(f"OpenSearch bulk indexing failed for {entity}: {errors[:3]}")
-        client.indices.refresh(index=item["write_index"])
+        write_indexes.add(item["write_index"])
+        published[entity] = {
+            "count": ok_count,
+            "alias": item["alias"],
+            "write_index": item["write_index"],
+            "dataset_version": item["dataset_version"],
+        }
+    client.indices.refresh(index=",".join(sorted(write_indexes)))
+    for entity, item in plan.items():
         count = client.count(
             index=item["alias"],
             body={"query": {"bool": {"filter": [
@@ -241,12 +284,6 @@ def publish_school(
         )["count"]
         if count != item["count"]:
             raise RuntimeError(f"OpenSearch count verification failed for {entity}: expected {item['count']}, got {count}")
-        published[entity] = {
-            "count": ok_count,
-            "alias": item["alias"],
-            "write_index": item["write_index"],
-            "dataset_version": item["dataset_version"],
-        }
     if activate:
         activate_school_documents(client, plan, university_id)
     return {
@@ -258,8 +295,10 @@ def publish_school(
 
 
 def activate_school_documents(client: Any, plan: dict[str, dict[str, Any]], university_id: str) -> None:
+    aliases: set[str] = set()
     for entity in ("universities", "catalog_entries", "entity_contexts"):
         item = plan[entity]
+        aliases.add(item["alias"])
         dataset_version = item["dataset_version"]
         client.update_by_query(
             index=item["alias"],
@@ -271,7 +310,7 @@ def activate_school_documents(client: Any, plan: dict[str, dict[str, Any]], univ
                 ]}},
             },
             conflicts="proceed",
-            refresh=True,
+            refresh=False,
         )
         client.update_by_query(
             index=item["alias"],
@@ -283,8 +322,9 @@ def activate_school_documents(client: Any, plan: dict[str, dict[str, Any]], univ
                 }},
             },
             conflicts="proceed",
-            refresh=True,
+            refresh=False,
         )
+    client.indices.refresh(index=",".join(sorted(aliases)))
 
 
 def activate_published_school(
@@ -297,11 +337,7 @@ def activate_published_school(
 ) -> None:
     plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
     if client is None:
-        try:
-            from opensearchpy import OpenSearch
-        except ImportError as exc:
-            raise RuntimeError("opensearch-py is required for OpenSearch activation") from exc
-        client = OpenSearch(opensearch_url)
+        client = _new_client(opensearch_url)
     activate_school_documents(client, plan, university_id)
 
 
@@ -316,11 +352,7 @@ def audit_staged_school(
 ) -> dict[str, Any]:
     plan = load_publish_plan(data_dir, university_id, university_metadata=university_metadata)
     if client is None:
-        try:
-            from opensearchpy import OpenSearch
-        except ImportError as exc:
-            raise RuntimeError("opensearch-py is required for OpenSearch audit") from exc
-        client = OpenSearch(opensearch_url)
+        client = _new_client(opensearch_url)
 
     catalog_item = plan["catalog_entries"]
     selected: list[dict[str, Any]] = []

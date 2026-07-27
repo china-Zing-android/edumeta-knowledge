@@ -4,7 +4,7 @@
 
 每次新增或更新院校 Markdown，都必须检查同一组质量风险。规则适用于所有院校，不允许为单校写例外。`passed` 才可自动发布，`needs_review` 不进入默认批量导入，`failed` 必须阻断。
 
-当前规则集版本：`2026-07-24.1`。
+当前规则集版本：`2026-07-27.1`。
 
 ## 五类门禁
 
@@ -41,7 +41,7 @@
 {
   "pre_publish": {
     "audit_status": "passed",
-    "audit_version": "2026-07-24.1",
+    "audit_version": "2026-07-27.1",
     "matched_rule_ids": [],
     "checks": {},
     "failures": [],

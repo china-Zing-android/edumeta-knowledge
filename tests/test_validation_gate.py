@@ -135,13 +135,61 @@ class ValidationGateTests(unittest.TestCase):
             rows[0]["degree_level"] = "SM"
             rows[0]["degree_full_name"] = "MS"
             rows[0]["level"] = "graduate"
-            rows[0]["source_url"] = "https://example.edu/programs/sociology-phd-applied-mathematics-statistics-ms-joint-program"
+            rows[0]["source_url"] = "https://example.edu/programs/sociology-phd-applied-mathematics-statistics-mse-joint-program"
             write_jsonl(data_dir / "catalog_entries.jsonl", rows)
 
             report = validate_school(data_dir, "mit")
 
         issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
         self.assertFalse(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
+
+    def test_degree_audit_allows_shared_ma_phd_catalog_page(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["program_name"] = "Anthropology"
+            rows[0]["degree_level"] = "SM"
+            rows[0]["degree_full_name"] = "MA"
+            rows[0]["level"] = "graduate"
+            rows[0]["source_url"] = "https://example.edu/programs/anthropology-ma-phd"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
+        self.assertFalse(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
+
+    def test_degree_audit_allows_shared_major_minor_catalog_page(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["program_name"] = "Economics Major"
+            rows[0]["degree_level"] = "SB"
+            rows[0]["degree_full_name"] = "BA"
+            rows[0]["level"] = "undergraduate"
+            rows[0]["source_url"] = "https://example.edu/programs/economics-major/minor"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
+        self.assertFalse(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
+
+    def test_degree_audit_rejects_unrelated_phd_only_page_for_masters_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = self.copy_dataset(Path(temp_dir))
+            rows = read_jsonl(data_dir / "catalog_entries.jsonl")
+            rows[0]["program_name"] = "Computer Science"
+            rows[0]["degree_level"] = "SM"
+            rows[0]["degree_full_name"] = "MS"
+            rows[0]["level"] = "graduate"
+            rows[0]["source_url"] = "https://example.edu/programs/anthropology-phd"
+            write_jsonl(data_dir / "catalog_entries.jsonl", rows)
+
+            report = validate_school(data_dir, "mit")
+
+        issues = report["checks"]["catalog_quality"]["checks"]["degree_consistency"]["issues"]
+        self.assertTrue(any(item["record_id"] == rows[0]["entry_id"] for item in issues))
 
     def test_entity_context_missing_cross_references_fail(self) -> None:
         mutations = (

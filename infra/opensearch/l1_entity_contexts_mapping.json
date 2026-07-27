@@ -6,6 +6,8 @@
     }
   },
   "mappings": {
+    "_meta": { "edumeta_schema_version": "2" },
+    "dynamic": false,
     "properties": {
       "context_id": { "type": "keyword" },
       "entity_type": { "type": "keyword" },
@@ -15,14 +17,18 @@
       "title": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
       "display_label": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
       "attributes": {
+        "dynamic": false,
         "properties": {
           "course_code": { "type": "keyword" },
+          "course_code_system": { "type": "keyword" },
           "program_id": { "type": "keyword" },
           "degree_level": { "type": "keyword" },
+          "degree_full_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
           "level": { "type": "keyword" },
           "department": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
           "school": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
           "discipline_ids": { "type": "keyword" },
+          "cross_school": { "type": "boolean" },
           "country_code": { "type": "keyword" },
           "region": { "type": "keyword" }
         }

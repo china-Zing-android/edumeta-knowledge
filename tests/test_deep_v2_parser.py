@@ -123,6 +123,49 @@ class DeepV2ParserTests(unittest.TestCase):
         )
         self.assertEqual(len({row["entry_id"] for row in result.catalog_entries}), 3)
 
+    def test_integrated_degree_uses_first_named_award_as_primary_level(self) -> None:
+        result = self.parse_text(
+            """# Example University Knowledge Base
+> **Data capture date**: 2026-07-24
+> Official website: https://www.example.edu/about
+
+## Undergraduate courses
+| Course Name | Degree | Faculty | URL |
+| --- | --- | --- | --- |
+| Computer Science | BA (Hons) and MEng | Technology | https://www.example.edu/courses/computer-science |
+"""
+        )
+
+        entry = result.catalog_entries[0]
+        self.assertEqual(entry["program_name"], "Computer Science")
+        self.assertEqual(entry["degree_level"], "SB")
+        self.assertEqual(entry["level"], "undergraduate")
+        self.assertEqual(entry["degree_full_name"], "BA")
+
+    def test_localized_url_header_binds_each_program_to_its_row_url(self) -> None:
+        result = self.parse_text(
+            """# Example University Knowledge Base
+> **Data capture date**: 2026-07-24
+> Official website: https://www.example.edu/about
+
+## 本科专业
+| 专业名称 | 学位类型 | 课程代码 | 课程链接 |
+| --- | --- | --- | --- |
+| Engineering and Science | BEng/BSc | E3007 | [链接](https://www.example.edu/courses/engineering-and-science-e3007) |
+| Computer Science | BCompSc | C2001 | [链接](https://www.example.edu/courses/computer-science-c2001) |
+"""
+        )
+
+        by_name = {row["program_name"]: row for row in result.catalog_entries}
+        self.assertEqual(
+            by_name["Computer Science"]["source_url"],
+            "https://www.example.edu/courses/computer-science-c2001",
+        )
+        self.assertNotEqual(
+            by_name["Computer Science"]["source_id"],
+            by_name["Engineering and Science"]["source_id"],
+        )
+
     def test_selected_v2_documents_produce_catalog_and_source_relationships(self) -> None:
         cases = {
             "asu": ("ASU_知识库_完整深度数据_v2.md", 1000, 1000),

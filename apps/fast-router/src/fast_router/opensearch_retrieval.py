@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -62,6 +63,23 @@ def normalized_catalog_query(query: str) -> str:
         value = value.replace(term, " ")
     value = re.sub(r"[^a-z0-9\u4e00-\u9fff-]+", " ", value)
     return " ".join(value.split())
+
+
+def _normalized_program_phrase(value: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", value.lower()).split())
+
+
+def _rerank_exact_programs(query: str, rows: list[dict[str, Any]], *name_fields: str) -> list[dict[str, Any]]:
+    normalized_query = f" {_normalized_program_phrase(query)} "
+
+    def is_exact(row: dict[str, Any]) -> bool:
+        for field in name_fields:
+            name = _normalized_program_phrase(str(row.get(field) or ""))
+            if name and f" {name} " in normalized_query:
+                return True
+        return False
+
+    return sorted(rows, key=lambda row: not is_exact(row))
 
 
 def detected_course_code(query: str) -> str | None:
@@ -188,7 +206,13 @@ class OpenSearchRetrievalClient:
         if client is None:
             from opensearchpy import OpenSearch
 
-            client = OpenSearch(opensearch_url, timeout=0.45, max_retries=0, retry_on_timeout=False)
+            max_retries = int(os.getenv("OPENSEARCH_RETRIEVAL_MAX_RETRIES", "1"))
+            client = OpenSearch(
+                opensearch_url,
+                timeout=float(os.getenv("OPENSEARCH_RETRIEVAL_ATTEMPT_TIMEOUT_SECONDS", "0.45")),
+                max_retries=max_retries,
+                retry_on_timeout=max_retries > 0,
+            )
         self.client = client
         self.version_map = version_map
 
@@ -211,6 +235,7 @@ class OpenSearchRetrievalClient:
         fact_types = infer_fact_types(query) if query_plan.stage == "fact" else []
         level = context.get("level") or infer_level(query)
         catalog_query = normalized_catalog_query(query)
+        candidate_size = min(50, max(max_results, max_results * 4))
         common_filters: list[dict[str, Any]] = [
             {"term": {"university_id": university_id}},
             {"term": {"dataset_version": dataset_version}},
@@ -239,7 +264,7 @@ class OpenSearchRetrievalClient:
                 {"multi_match": {"query": catalog_query, "fields": ["program_name^6", "canonical_program_name^6", "aliases^5", "department^3", "school^2", "search_text"], "operator": "and"}},
             ])
         catalog_body = {
-            "size": max_results,
+            "size": candidate_size,
             "track_total_hits": False,
             "query": {"bool": {
                 "filter": catalog_filters,
@@ -327,7 +352,7 @@ class OpenSearchRetrievalClient:
         if not program_context_requested:
             context_filters.append({"term": {"entity_type": "university"}})
         context_body = {
-            "size": min(query_plan.max_primary_entities, max_results),
+            "size": candidate_size,
             "track_total_hits": False,
             "query": {"bool": {
                 "filter": context_filters,
@@ -350,9 +375,18 @@ class OpenSearchRetrievalClient:
         if course_code and catalog:
             exact = [row for row in catalog if str(row.get("course_code", "")).lower() == course_code.lower()]
             catalog = exact[:1]
+        elif catalog:
+            catalog = _rerank_exact_programs(
+                query,
+                catalog,
+                "program_name",
+                "canonical_program_name",
+            )[:max_results]
         facts = self._matches(responses[1], "fact_lookup") if fact_types else []
         sources = self._matches(responses[2], "source_scope")
         contexts = self._matches(responses[3], "entity_context")
+        if contexts:
+            contexts = _rerank_exact_programs(query, contexts, "title", "display_label")[:max_results]
 
         program_contexts = [row for row in contexts if row.get("entity_type") == "program"]
         scoped_source_ids = sorted({

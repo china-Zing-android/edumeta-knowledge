@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from catalog_parser.disciplines import classify_catalog_entry
 from fast_router.opensearch_retrieval import CurrentVersionMap, OpenSearchRetrievalClient
@@ -99,6 +101,29 @@ class FakeCrossUniversityL1:
 
 
 class CrossUniversityRetrievalTests(unittest.TestCase):
+    def test_default_client_retries_one_short_opensearch_timeout_within_one_second_budget(self) -> None:
+        with (
+            patch("opensearchpy.OpenSearch") as factory,
+            patch.dict(
+                os.environ,
+                {
+                    "OPENSEARCH_RETRIEVAL_ATTEMPT_TIMEOUT_SECONDS": "0.45",
+                    "OPENSEARCH_RETRIEVAL_MAX_RETRIES": "1",
+                },
+            ),
+        ):
+            OpenSearchRetrievalClient(
+                "http://opensearch:9200",
+                CurrentVersionMap(initial={"mit": "mit_v2"}),
+            )
+
+        factory.assert_called_once_with(
+            "http://opensearch:9200",
+            timeout=0.45,
+            max_retries=1,
+            retry_on_timeout=True,
+        )
+
     def test_discipline_classification_does_not_broaden_from_unrelated_school_name(self) -> None:
         disciplines = classify_catalog_entry({
             "program_name": "Economics",

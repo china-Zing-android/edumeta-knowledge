@@ -51,7 +51,8 @@ def _clean_url(value: str, base_url: str | None = None) -> str | None:
     else:
         match = BARE_DOMAIN_PATTERN.search(value)
         if match:
-            candidate = f"https://{match.group(0).rstrip('.,;:]}\"')}"
+            bare_domain = match.group(0).rstrip(".,;:]}\"")
+            candidate = f"https://{bare_domain}"
         else:
             relative_match = re.search(r"(?<![\w/])/[a-z0-9][^\s`|)>]*", value, re.IGNORECASE)
             if not relative_match or not base_url:
@@ -219,9 +220,13 @@ def _specific_degree_hint(row_degree: str, heading_values: list[str], source_url
     )
     for candidate in candidates:
         value = candidate.lower()
-        for label, pattern in patterns:
-            if re.search(pattern, value):
-                return label
+        matches = [
+            (match.start(), order, label)
+            for order, (label, pattern) in enumerate(patterns)
+            if (match := re.search(pattern, value))
+        ]
+        if matches:
+            return min(matches)[2]
     return None
 
 
@@ -312,9 +317,23 @@ def parse_deep_v2_markdown(university_id: str, path: Path) -> ParseResult:
         program_index = _program_column(headers)
         if program_index is None:
             continue
-        url_index = next((i for i, header in enumerate(headers) if "url" in header.lower() or "source" in header.lower()), None)
+        url_index = next(
+            (
+                i
+                for i, header in enumerate(headers)
+                if any(term in header.lower() for term in ("url", "source", "链接", "网址", "来源"))
+            ),
+            None,
+        )
         code_index = next((i for i, header in enumerate(headers) if "代码" in header or "code" in header.lower()), None)
-        degree_index = next((i for i, header in enumerate(headers) if "学位" in header or "type" in header.lower()), None)
+        degree_index = next(
+            (
+                i
+                for i, header in enumerate(headers)
+                if "学位" in header or any(term in header.lower() for term in ("degree", "award", "type"))
+            ),
+            None,
+        )
         school_index = next((i for i, header in enumerate(headers) if header.lower() in {"school", "faculty", "college", "学院"}), None)
         department_index = next((i for i, header in enumerate(headers) if header.lower() in {"department", "dept", "系", "院系"}), None)
         context_parts = [heading_path[key] for key in sorted(heading_path)]
