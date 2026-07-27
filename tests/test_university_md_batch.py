@@ -19,6 +19,38 @@ def write_document(path: Path, title: str, body: str = "") -> None:
 
 
 class UniversityMarkdownBatchTests(unittest.TestCase):
+    def test_poll_ingestion_reports_status_transitions(self) -> None:
+        class FakeResponse:
+            def __init__(self, status: str):
+                self.status = status
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"run_id": "run_1", "status": self.status}
+
+        class FakeClient:
+            def __init__(self):
+                self.statuses = iter(("validating", "publishing", "published"))
+
+            def get(self, url: str) -> FakeResponse:
+                return FakeResponse(next(self.statuses))
+
+        progress: list[str] = []
+        terminal = poll_ingestion(
+            FakeClient(),
+            "http://unused",
+            "run_1",
+            5,
+            on_progress=lambda payload, elapsed: progress.append(payload["status"]),
+            progress_interval_seconds=0,
+            poll_interval_seconds=0,
+        )
+
+        self.assertEqual(progress, ["validating", "publishing", "published"])
+        self.assertEqual(terminal["status"], "published")
+
     def test_resume_state_is_invalidated_by_content_or_audit_version_change(self) -> None:
         records = [{"university_id": "example", "content_sha256": "new-hash"}]
         preflight = {"example": {"quality_audit": {"audit_version": "rules-v2"}}}

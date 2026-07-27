@@ -9,7 +9,7 @@ import tempfile
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -332,17 +332,37 @@ def upload_school(client: httpx.Client, base_url: str, data_root: Path, record: 
     return response.json()
 
 
-def poll_ingestion(client: httpx.Client, base_url: str, run_id: str, timeout_seconds: float) -> dict[str, Any]:
+def poll_ingestion(
+    client: httpx.Client,
+    base_url: str,
+    run_id: str,
+    timeout_seconds: float,
+    *,
+    on_progress: Callable[[dict[str, Any], float], None] | None = None,
+    progress_interval_seconds: float = 10,
+    poll_interval_seconds: float = 2,
+) -> dict[str, Any]:
+    started = time.monotonic()
     deadline = time.monotonic() + timeout_seconds
+    last_status: str | None = None
+    next_heartbeat = started
     while True:
         response = client.get(f"{base_url}/v1/university-ingestions/{run_id}")
         response.raise_for_status()
         payload = response.json()
-        if payload.get("status") in TERMINAL_INGESTION_STATUSES:
+        status = str(payload.get("status") or "unknown")
+        now = time.monotonic()
+        elapsed = now - started
+        terminal = status in TERMINAL_INGESTION_STATUSES
+        if on_progress and (status != last_status or now >= next_heartbeat or terminal):
+            on_progress(payload, elapsed)
+            last_status = status
+            next_heartbeat = now + max(progress_interval_seconds, 0)
+        if terminal:
             return payload
-        if time.monotonic() >= deadline:
+        if now >= deadline:
             raise TimeoutError(f"ingestion {run_id} did not finish within {timeout_seconds}s")
-        time.sleep(2)
+        time.sleep(max(poll_interval_seconds, 0))
 
 
 def main() -> None:
@@ -365,6 +385,7 @@ def main() -> None:
     ingest.add_argument("--state", type=Path, default=DEFAULT_STATE)
     ingest.add_argument("--base-url", default="http://127.0.0.1:8000")
     ingest.add_argument("--timeout-seconds", type=float, default=900)
+    ingest.add_argument("--progress-interval-seconds", type=float, default=10)
     ingest.add_argument("--dry-run", action="store_true")
     ingest.add_argument("--allow-unverified", action="store_true")
 
@@ -418,19 +439,44 @@ def main() -> None:
         print(json.dumps({"selected": len(records), "pending": len(pending), "university_ids": [row["university_id"] for row in pending]}, ensure_ascii=False, indent=2))
         return
 
+    print(
+        f"Selected {len(records)} verified universities; {len(pending)} require ingestion.",
+        file=sys.stderr,
+        flush=True,
+    )
     base_url = args.base_url.rstrip("/")
     with httpx.Client(timeout=60) as client:
         for index, record in enumerate(pending, start=1):
             started = time.perf_counter()
+            prefix = f"[{index}/{len(pending)}] {record['university_id']}"
+            print(f"{prefix}: uploading", file=sys.stderr, flush=True)
             try:
                 accepted = upload_school(client, base_url, args.data_root, record)
-                terminal = accepted if accepted.get("status") == "unchanged" else poll_ingestion(
-                    client, base_url, accepted["run_id"], args.timeout_seconds
+                run_id = accepted["run_id"]
+                print(
+                    f"{prefix}: accepted run_id={run_id} operation={accepted.get('operation')}",
+                    file=sys.stderr,
+                    flush=True,
                 )
+                if accepted.get("status") == "unchanged":
+                    terminal = accepted
+                else:
+                    terminal = poll_ingestion(
+                        client,
+                        base_url,
+                        run_id,
+                        args.timeout_seconds,
+                        progress_interval_seconds=args.progress_interval_seconds,
+                        on_progress=lambda payload, elapsed, line_prefix=prefix: print(
+                            f"{line_prefix}: {payload.get('status')} elapsed={elapsed:.1f}s",
+                            file=sys.stderr,
+                            flush=True,
+                        ),
+                    )
                 state_by_id[record["university_id"]] = {
                     "university_id": record["university_id"],
                     "relative_path": record["relative_path"],
-                    "run_id": accepted["run_id"],
+                    "run_id": run_id,
                     "operation": accepted.get("operation"),
                     "status": terminal.get("status"),
                     "content_sha256": record.get("content_sha256"),
@@ -451,7 +497,11 @@ def main() -> None:
                 }
             write_jsonl(args.state, sorted(state_by_id.values(), key=lambda row: row["university_id"]))
             result = state_by_id[record["university_id"]]
-            print(f"[{index}/{len(pending)}] {record['university_id']}: {result['status']}", file=sys.stderr)
+            print(
+                f"{prefix}: completed status={result['status']} elapsed={result['elapsed_ms'] / 1000:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
 
     selected_states = [state_by_id.get(row["university_id"], {}) for row in records]
     summary = {

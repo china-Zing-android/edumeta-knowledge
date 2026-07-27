@@ -8,7 +8,7 @@
 docker compose up -d --build
 ```
 
-bootstrap 会幂等执行全部 migration，装载 `data/normalized/` 下的学校，发布五类 OpenSearch 投影并校验学校/版本计数。只有 bootstrap `Exited (0)` 后 Router 才启动；只有 Router healthy 后 MCP 才启动。因此首次 clone 不会得到“容器正常但数据库和索引为空”的假健康状态。
+bootstrap 只幂等执行全部 migration，不装载或发布仓库内的 fixture 数据。真实院校必须通过带 pre-publish/post-publish 门禁的 Markdown 导入链路进入 PostgreSQL 和 OpenSearch，避免服务重启把已隔离院校重新设为 current。只有 bootstrap `Exited (0)` 后 Router 才启动；只有 Router healthy 后 MCP 才启动。首次 clone 启动后需要执行受审计的批量导入或上传单校 Markdown。
 
 默认端口：Fast Router `127.0.0.1:8000`，MCP `127.0.0.1:8765/mcp`，PostgreSQL `127.0.0.1:5432`，OpenSearch `127.0.0.1:9200`。
 

@@ -44,21 +44,13 @@ services:
       OPENSEARCH_URL: http://opensearch:9200
     command:
       - python
-      - /app/scripts/live_data_gate.py
+      - /app/scripts/apply_postgres_migrations.py
       - --postgres-dsn
       - postgresql://edumeta:edumeta@postgres:5432/edumeta
-      - --opensearch-url
-      - http://opensearch:9200
-      - --data-root
-      - /app/data/normalized
       - --migrations-dir
       - /app/infra/postgres
-      - --output-path
-      - /tmp/edumeta-bootstrap-report.json
     depends_on:
       postgres:
-        condition: service_healthy
-      opensearch:
         condition: service_healthy
     restart: "no"
 

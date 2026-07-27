@@ -37,6 +37,14 @@ curl -fsS http://127.0.0.1:8000/health | jq '.weknora | {import_enabled,worker_a
 ./scripts/import_universities.sh --country US --limit 3
 ```
 
+导入命令会立即显示选中数量、当前学校、`run_id`、处理阶段及耗时；阶段没有变化时每 10 秒输出一次心跳。可用 `--progress-interval-seconds 5` 调整心跳间隔。
+
+旧版本脚本正在执行且暂时没有输出时，可在另一个终端查看服务端状态：
+
+```bash
+watch -n 2 'docker compose exec -T postgres psql -U edumeta -d edumeta -c "SELECT university_id,status,operation,updated_at,error_message FROM ingestion_runs ORDER BY created_at DESC LIMIT 8;"'
+```
+
 检查批次状态：
 
 ```bash

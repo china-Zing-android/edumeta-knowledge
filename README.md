@@ -15,10 +15,8 @@ docker compose up -d --build
 The first start automatically:
 
 1. Applies every PostgreSQL migration.
-2. Loads all schools under `data/normalized/`.
-3. Publishes and verifies the global OpenSearch aliases.
-4. Starts Fast Router only after bootstrap succeeds.
-5. Starts the MCP Gateway only after Fast Router is healthy.
+2. Starts Fast Router only after migrations succeed.
+3. Starts the MCP Gateway only after Fast Router is healthy.
 
 Check the stack:
 
@@ -29,6 +27,8 @@ curl http://127.0.0.1:8765/health
 ```
 
 The `bootstrap` container should show `Exited (0)`. Fast Router and Tool Gateway should be `healthy`.
+
+`bootstrap` never publishes bundled fixture data. University data becomes current only through the audited Markdown ingestion API or the batch import command below. This prevents a service restart from restoring a school that was quarantined by a newer quality ruleset.
 
 For access through a private Tailscale address, set the server address in `.env` and recreate only the two API services:
 

@@ -21,7 +21,6 @@ COPY pipelines/indexer/src /app/pipelines/indexer/src
 COPY infra/opensearch /app/infra/opensearch
 COPY infra/postgres /app/infra/postgres
 COPY docs/schemas /app/docs/schemas
-COPY data/normalized /app/data/normalized
 COPY scripts /app/scripts
 
 ENV PYTHONPATH=/app/apps/fast-router/src:/app/pipelines/catalog-parser/src:/app/pipelines/indexer/src

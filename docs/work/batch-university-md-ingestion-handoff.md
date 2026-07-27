@@ -36,16 +36,19 @@ Add the 2026-07 university Markdown batch to the repository and provide a gated,
 
 ## Verification
 
-- Full Python suite after quality-gate implementation: 213 passed, 7 skipped, 15 subtests passed.
+- Full Python suite after progress reporting and migration-only bootstrap: 214 passed, 7 skipped, 15 subtests passed.
 - TypeScript Tool Gateway: 9 tests passed after typecheck and build.
 - Full preflight: 276 passed, 76 needs_review, 87 failed.
 - Dry-run selection with country/limit returns the expected passed IDs.
 - Fake HTTP lifecycle verifies create -> published -> repeated upload unchanged.
 - No source file exceeds GitHub's per-file size limit; no credential pattern was found.
+- Compose configuration and deployment tests pass. Local image build was not rerun because the local Docker daemon was unavailable; the server build remains the deployment verification point.
 - Pre-upgrade comparison: 210 direct technical passes, 135 newly passing after generic Parser upgrades, 16 conditional reviews, and 78 blocked.
 - Live post-ingestion student QA against `http://100.74.163.113:8000`: 30 cases x 5 runs, 22/30 strict pass, no nondeterminism, L1 HTTP p95 153.490 ms. Accuracy and source-URL quality do not pass release criteria; detailed report at `qa/reports/live-batch-student-qa-2026-07-24.md`.
 - Post-audit QA uses the same 30 question texts in `qa/live-batch-student-qa-post-audit-2026-07-27.jsonl`. Princeton, Melbourne, and Toronto now expect `not_found` because their Markdown fails the completeness gate and must be quarantined. The original suite remains unchanged as the 22/30 baseline.
 - `qa/` is mounted read-only into Fast Router so the server can run the 30-question benchmark inside Docker without installing host Python packages.
+- Batch ingestion now reports upload acceptance, run ID, status transitions, a 10-second heartbeat, completion, and elapsed time.
+- Compose bootstrap is migration-only. It no longer republishes `data/normalized` fixtures, so restarts cannot bypass ingestion quality gates or restore quarantined schools.
 
 ## Current Risks
 

@@ -14,12 +14,14 @@ def test_root_compose_includes_the_canonical_stack() -> None:
     assert payload["include"] == ["infra/docker-compose.yml"]
 
 
-def test_compose_bootstraps_data_before_router_and_starts_mcp_by_default() -> None:
+def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
     services = payload["services"]
 
     assert "bootstrap" in services
     assert services["bootstrap"]["restart"] == "no"
+    assert "/app/scripts/apply_postgres_migrations.py" in services["bootstrap"]["command"]
+    assert "/app/scripts/live_data_gate.py" not in services["bootstrap"]["command"]
     assert services["fast-router"]["depends_on"]["bootstrap"]["condition"] == "service_completed_successfully"
     assert "profiles" not in services["tool-gateway"]
     assert services["tool-gateway"]["depends_on"]["fast-router"]["condition"] == "service_healthy"
@@ -39,16 +41,16 @@ def test_only_api_services_have_configurable_private_bind_hosts() -> None:
     ]
 
 
-def test_fast_router_image_contains_bootstrap_inputs() -> None:
+def test_fast_router_image_contains_runtime_and_migration_inputs() -> None:
     dockerfile = (ROOT / "apps/fast-router/Dockerfile").read_text("utf-8")
 
     for expected in (
         "COPY scripts /app/scripts",
-        "COPY data/normalized /app/data/normalized",
         "COPY docs/schemas /app/docs/schemas",
         "COPY infra/postgres /app/infra/postgres",
     ):
         assert expected in dockerfile
+    assert "COPY data/normalized /app/data/normalized" not in dockerfile
 
 
 def test_batch_markdown_is_mounted_read_only_and_state_is_persistent() -> None:
