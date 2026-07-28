@@ -58,6 +58,34 @@ not automatically upload URLs. See
 `docs/operations/server-update-and-validation.md` for the complete update,
 ingestion, regression, and MCP verification sequence.
 
+## OpenSearch Web Console
+
+OpenSearch Dashboards is an optional profile pinned to the same `2.15.0`
+version as OpenSearch. Starting it does not recreate OpenSearch or replace the
+existing `opensearch_data` volume.
+
+Local start:
+
+```bash
+docker compose --profile dashboards up -d opensearch-dashboards
+```
+
+Current server start:
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.server.yaml \
+  --profile dashboards \
+  up -d opensearch-dashboards
+```
+
+Open `http://127.0.0.1:5601` on the server itself or
+`http://100.74.163.113:5601` from a device in the same tailnet. Port 5601 has
+no application login because the current OpenSearch Security Plugin is
+disabled; never publish it on a public interface. See
+`docs/operations/opensearch-dashboards.md` for verification and restart steps.
+
 ## MCP
 
 ```json

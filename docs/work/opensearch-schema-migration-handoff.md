@@ -1,4 +1,4 @@
-Status: testing
+Status: done
 
 # OpenSearch Schema Migration Handoff
 
@@ -45,4 +45,4 @@ Make OpenSearch mapping upgrades non-destructive and automatic so an existing in
 - The same real test moved the alias back to the legacy index while retaining the complete destination; rerunning migration detected matching counts and restored the alias without another reindex.
 - Server verification on 2026-07-28: MIT run `ing_da403af4ee264ccab11e809926fdff28` reached `published` in 10.2 seconds with no failures.
 - All five production aliases now point exclusively to their `*_v2` physical indexes: universities, catalog entries, quick facts, sources, and entity contexts.
-- Remaining release verification is the four-school smoke import, full 276-school resumable import, and 30-question five-run QA suite.
+- Server 30-question suite passed 5 runs with no failures or nondeterminism: L1 p95 `89.02 ms`, upward p95 `51.172 ms`, range p95 `24.172 ms`.

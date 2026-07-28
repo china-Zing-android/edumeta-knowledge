@@ -25,6 +25,30 @@ def test_server_compose_exposes_apis_on_loopback_and_tailscale() -> None:
     assert "!override" in text
 
 
+def test_opensearch_dashboards_is_version_pinned_and_optional() -> None:
+    payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
+    services = payload["services"]
+    dashboards = services["opensearch-dashboards"]
+
+    assert dashboards["image"] == "opensearchproject/opensearch-dashboards:2.15.0"
+    assert dashboards["profiles"] == ["dashboards"]
+    assert dashboards["environment"]["OPENSEARCH_HOSTS"] == '["http://opensearch:9200"]'
+    assert dashboards["environment"]["DISABLE_SECURITY_DASHBOARDS_PLUGIN"] == "true"
+    assert dashboards["ports"] == [
+        "${OPENSEARCH_DASHBOARDS_BIND_HOST:-127.0.0.1}:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
+    ]
+    assert dashboards["depends_on"]["opensearch"]["condition"] == "service_healthy"
+    assert services["opensearch"]["image"] == "opensearchproject/opensearch:2.15.0"
+    assert services["opensearch"]["volumes"] == ["opensearch_data:/usr/share/opensearch/data"]
+
+
+def test_server_compose_exposes_dashboards_only_on_loopback_and_tailscale() -> None:
+    text = (ROOT / "compose.server.yaml").read_text("utf-8")
+
+    assert '127.0.0.1:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601' in text
+    assert '${SERVER_TAILSCALE_HOST:-100.74.163.113}:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601' in text
+
+
 def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
     services = payload["services"]
