@@ -43,3 +43,6 @@ Make OpenSearch mapping upgrades non-destructive and automatic so an existing in
 - Migration tests use async task submission and refuse alias activation on a final count mismatch.
 - Real OpenSearch 2.15 test asynchronously migrated 250 documents from a `text` index to a `keyword` index.
 - The same real test moved the alias back to the legacy index while retaining the complete destination; rerunning migration detected matching counts and restored the alias without another reindex.
+- Server verification on 2026-07-28: MIT run `ing_da403af4ee264ccab11e809926fdff28` reached `published` in 10.2 seconds with no failures.
+- All five production aliases now point exclusively to their `*_v2` physical indexes: universities, catalog entries, quick facts, sources, and entity contexts.
+- Remaining release verification is the four-school smoke import, full 276-school resumable import, and 30-question five-run QA suite.
