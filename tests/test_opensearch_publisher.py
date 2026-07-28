@@ -52,31 +52,88 @@ class OpenSearchPublisherTests(unittest.TestCase):
         self.assertEqual(client.cluster.kwargs["index"], item["write_index"])
         self.assertEqual(client.cluster.kwargs["timeout"], "120s")
 
-    def test_existing_index_mapping_is_upgraded_only_when_schema_version_changes(self) -> None:
-        mapping_updates: list[dict] = []
+    def test_schema_upgrade_reindexes_legacy_alias_before_atomic_switch(self) -> None:
+        calls: list[tuple[str, dict]] = []
 
         class FakeIndices:
             def exists(self, **kwargs):
-                return True
+                return False
+
+            def create(self, **kwargs):
+                calls.append(("create", kwargs))
 
             def get_mapping(self, **kwargs):
-                return {kwargs["index"]: {"mappings": {"_meta": {"edumeta_schema_version": "1"}}}}
-
-            def put_mapping(self, **kwargs):
-                mapping_updates.append(kwargs)
+                raise AssertionError("legacy mappings must not be mutated in place")
 
             def get_alias(self, **kwargs):
-                return {"l1_catalog_entries_v1": {}}
+                return {"l1_catalog_entries_v1": {"aliases": {kwargs["name"]: {}}}}
+
+            def update_aliases(self, **kwargs):
+                calls.append(("update_aliases", kwargs))
+
+        class FakeCluster:
+            def health(self, **kwargs):
+                calls.append(("health", kwargs))
+                return {"status": "yellow", "timed_out": False}
 
         class FakeClient:
-            indices = FakeIndices()
+            def __init__(self):
+                self.indices = FakeIndices()
+                self.cluster = FakeCluster()
+
+            def reindex(self, **kwargs):
+                calls.append(("reindex", kwargs))
+                return {"created": 12, "updated": 0, "failures": []}
+
+            def count(self, **kwargs):
+                return {"count": 12}
 
         item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
         _ensure_index_and_alias(FakeClient(), item)
 
-        self.assertEqual(len(mapping_updates), 1)
-        self.assertEqual(mapping_updates[0]["body"]["_meta"]["edumeta_schema_version"], "2")
-        self.assertFalse(mapping_updates[0]["body"]["dynamic"])
+        self.assertEqual(item["write_index"], "l1_catalog_entries_v2")
+        self.assertEqual([name for name, _ in calls], ["create", "health", "reindex", "update_aliases"])
+        reindex = calls[2][1]
+        self.assertEqual(reindex["body"]["source"]["index"], ["l1_catalog_entries_v1"])
+        self.assertEqual(reindex["body"]["dest"]["index"], "l1_catalog_entries_v2")
+        actions = calls[3][1]["body"]["actions"]
+        self.assertEqual(actions, [
+            {"remove": {"index": "l1_catalog_entries_v1", "alias": "l1_catalog_entries_current"}},
+            {"add": {"index": "l1_catalog_entries_v2", "alias": "l1_catalog_entries_current"}},
+        ])
+
+    def test_schema_upgrade_keeps_legacy_alias_when_reindex_count_mismatches(self) -> None:
+        class FakeIndices:
+            def exists(self, **kwargs):
+                return False
+
+            def create(self, **kwargs):
+                return None
+
+            def get_alias(self, **kwargs):
+                return {"l1_catalog_entries_v1": {}}
+
+            def update_aliases(self, **kwargs):
+                raise AssertionError("alias must not move when migration validation fails")
+
+        class FakeCluster:
+            def health(self, **kwargs):
+                return {"status": "yellow", "timed_out": False}
+
+        class FakeClient:
+            def __init__(self):
+                self.indices = FakeIndices()
+                self.cluster = FakeCluster()
+
+            def reindex(self, **kwargs):
+                return {"created": 11, "updated": 0, "failures": []}
+
+            def count(self, **kwargs):
+                return {"count": 12 if kwargs["index"] == "l1_catalog_entries_v1" else 11}
+
+        item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
+        with self.assertRaisesRegex(RuntimeError, "schema migration count mismatch"):
+            _ensure_index_and_alias(FakeClient(), item)
 
     def test_post_index_audit_rejects_wrong_top_catalog_match(self) -> None:
         class FakeClient:
@@ -113,11 +170,9 @@ class OpenSearchPublisherTests(unittest.TestCase):
                 index = kwargs["index"]
                 return {index: {"mappings": {"_meta": {"edumeta_schema_version": "2"}}}}
 
-            def put_mapping(self, **kwargs):
-                return None
-
             def get_alias(self, **kwargs):
-                return {"index": {}}
+                index = kwargs["name"].removesuffix("_current") + "_v2"
+                return {index: {}}
 
             def put_alias(self, **kwargs):
                 return None
@@ -188,6 +243,7 @@ class OpenSearchPublisherTests(unittest.TestCase):
         self.assertEqual(report["indexes"]["universities"]["count"], 1)
         self.assertEqual(report["indexes"]["entity_contexts"]["count"], 158)
         self.assertEqual(report["indexes"]["catalog_entries"]["alias"], "l1_catalog_entries_current")
+        self.assertEqual(report["indexes"]["catalog_entries"]["write_index"], "l1_catalog_entries_v2")
         self.assertEqual(report["indexes"]["sources"]["alias"], "l1_sources_current")
         self.assertEqual(report["indexes"]["entity_contexts"]["alias"], "l1_entity_contexts_current")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,14 @@ def _dataset_version(records: list[dict[str, Any]]) -> str:
     if len(versions) != 1:
         raise ValueError(f"records must have exactly one dataset_version, got {sorted(versions)}")
     return next(iter(versions))
+
+
+def _mapping_schema_version(mapping_path: Path) -> str:
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+    version = str(mapping.get("mappings", {}).get("_meta", {}).get("edumeta_schema_version") or "").strip()
+    if not version or not re.fullmatch(r"[A-Za-z0-9_-]+", version):
+        raise ValueError(f"mapping must define a safe edumeta_schema_version: {mapping_path}")
+    return version
 
 
 def _university_record(
@@ -143,7 +152,8 @@ def load_publish_plan(
         if len(ids) != len(set(ids)):
             raise ValueError(f"{spec.file_name or spec.entity_name} contains duplicate {spec.id_field}")
         version = _dataset_version(records) if records else catalog_version
-        write_index = spec.alias.removesuffix("_current") + "_v1"
+        schema_version = _mapping_schema_version(spec.mapping_path)
+        write_index = spec.alias.removesuffix("_current") + f"_v{schema_version}"
         plan[spec.entity_name] = {
             "spec": spec,
             "records": records,
@@ -151,6 +161,7 @@ def load_publish_plan(
             "alias": spec.alias,
             "write_index": write_index,
             "dataset_version": version,
+            "schema_version": schema_version,
             "mapping_path": str(spec.mapping_path),
         }
     return plan
@@ -189,10 +200,11 @@ def bulk_actions(index_name: str, id_field: str, records: list[dict[str, Any]]) 
 def _ensure_index_and_alias(client: Any, item: dict[str, Any]) -> None:
     index_name = item["write_index"]
     mapping = json.loads(Path(item["mapping_path"]).read_text(encoding="utf-8"))
+    expected_version = str(mapping["mappings"]["_meta"]["edumeta_schema_version"])
+    timeout_seconds = float(os.getenv("OPENSEARCH_PUBLISH_TIMEOUT_SECONDS", "120"))
     created = not client.indices.exists(index=index_name)
     if created:
         client.indices.create(index=index_name, body=mapping)
-        timeout_seconds = float(os.getenv("OPENSEARCH_PUBLISH_TIMEOUT_SECONDS", "120"))
         health = client.cluster.health(
             index=index_name,
             wait_for_status="yellow",
@@ -203,7 +215,6 @@ def _ensure_index_and_alias(client: Any, item: dict[str, Any]) -> None:
         if health.get("timed_out") or health.get("status") not in {"yellow", "green"}:
             raise RuntimeError(f"OpenSearch index did not become ready: {index_name}")
     else:
-        expected_version = mapping.get("mappings", {}).get("_meta", {}).get("edumeta_schema_version")
         current = client.indices.get_mapping(index=index_name)
         current_version = (
             current.get(index_name, {})
@@ -211,15 +222,48 @@ def _ensure_index_and_alias(client: Any, item: dict[str, Any]) -> None:
             .get("_meta", {})
             .get("edumeta_schema_version")
         )
-        if expected_version and current_version != expected_version:
-            client.indices.put_mapping(index=index_name, body=mapping["mappings"])
+        if str(current_version or "") != expected_version:
+            raise RuntimeError(
+                f"OpenSearch physical index schema mismatch: {index_name} "
+                f"has {current_version!r}, expected {expected_version!r}"
+            )
     try:
         aliases = client.indices.get_alias(name=item["alias"])
     except Exception as exc:  # opensearch-py NotFoundError shape varies by version
         if getattr(exc, "status_code", None) != 404:
             raise
         aliases = {}
-    if index_name not in aliases:
+    legacy_indexes = sorted(name for name in aliases if name != index_name)
+    if legacy_indexes:
+        response = client.reindex(
+            body={
+                "source": {"index": legacy_indexes},
+                "dest": {"index": index_name},
+            },
+            refresh=True,
+            wait_for_completion=True,
+            request_timeout=timeout_seconds + 5,
+        )
+        failures = response.get("failures") or []
+        if response.get("timed_out") or failures:
+            raise RuntimeError(
+                f"OpenSearch schema migration failed for {item['alias']}: {failures[:3]}"
+            )
+        source_count = int(client.count(index=",".join(legacy_indexes))["count"])
+        target_count = int(client.count(index=index_name)["count"])
+        if target_count != source_count:
+            raise RuntimeError(
+                f"OpenSearch schema migration count mismatch for {item['alias']}: "
+                f"source={source_count}, target={target_count}"
+            )
+        actions = [
+            {"remove": {"index": legacy_index, "alias": item["alias"]}}
+            for legacy_index in legacy_indexes
+        ]
+        if index_name not in aliases:
+            actions.append({"add": {"index": index_name, "alias": item["alias"]}})
+        client.indices.update_aliases(body={"actions": actions})
+    elif index_name not in aliases:
         client.indices.put_alias(index=index_name, name=item["alias"])
 
 

@@ -160,6 +160,8 @@ ss -lntp | grep -E ':(8000|18765)\b'
 
 每所学校应最终显示 `published` 或 `unchanged`。`accepted`、`parsing`、`validating`、`publishing` 都是中间状态，不是完成状态。
 
+如果服务器从旧 OpenSearch mapping 首次升级，新版本会在第一所学校发布时自动执行一次索引 schema 迁移：创建按 schema 版本命名的新物理索引、复制旧 alias 的全部数据、核对条数并原子切换 alias。旧物理索引保留用于回滚，不需要删除 OpenSearch volume。第一所可能比后续学校稍慢。
+
 ### 5. 导入全部通过门禁的院校
 
 ```bash
@@ -362,6 +364,7 @@ docker compose -f compose.yaml -f compose.server.yaml logs --tail=200 opensearch
 
 - 长时间停在 `accepted`：检查 Fast Router 日志和非终态数据库查询。
 - `failed`：查看该 run 的 `error_message`、`stage_failures` 和 `quality_audits`。
+- 出现 `mapper [...] cannot be changed from type [...]`：说明仍在运行不支持 schema 迁移的旧镜像。拉取最新代码、重新 `--build`，然后重跑原导入命令；禁止直接改 mapping 或删除 volume。
 - HTTP 正常、MCP 不通：先检查 `18765/health`，再确认客户端使用的是新端口且已重启会话。
 - Tailscale 地址不通、本机地址正常：检查服务器是否确实拥有 `100.74.163.113`，以及主机防火墙是否允许 tailnet 访问 `8000/18765`。
 - QA 失败：不要强制发布或写学校特例；按失败类型回到 Parser、质量门禁、OpenSearch scope 或 MCP 契约修复。
