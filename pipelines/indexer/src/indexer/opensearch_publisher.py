@@ -235,22 +235,42 @@ def _ensure_index_and_alias(client: Any, item: dict[str, Any]) -> None:
         aliases = {}
     legacy_indexes = sorted(name for name in aliases if name != index_name)
     if legacy_indexes:
-        response = client.reindex(
-            body={
-                "source": {"index": legacy_indexes},
-                "dest": {"index": index_name},
-            },
-            refresh=True,
-            wait_for_completion=True,
-            request_timeout=timeout_seconds + 5,
-        )
-        failures = response.get("failures") or []
-        if response.get("timed_out") or failures:
-            raise RuntimeError(
-                f"OpenSearch schema migration failed for {item['alias']}: {failures[:3]}"
-            )
         source_count = int(client.count(index=",".join(legacy_indexes))["count"])
         target_count = int(client.count(index=index_name)["count"])
+        if target_count != source_count:
+            task = client.reindex(
+                body={
+                    "source": {"index": legacy_indexes},
+                    "dest": {"index": index_name},
+                },
+                wait_for_completion=False,
+                request_timeout=10,
+            )
+            task_id = task.get("task")
+            if not task_id:
+                raise RuntimeError(f"OpenSearch schema migration did not return a task id for {item['alias']}")
+            task_result = client.tasks.get(
+                task_id=task_id,
+                wait_for_completion=True,
+                timeout=f"{timeout_seconds:g}s",
+                request_timeout=timeout_seconds + 5,
+            )
+            if not task_result.get("completed"):
+                raise RuntimeError(
+                    f"OpenSearch schema migration task did not finish for {item['alias']}: {task_id}"
+                )
+            if task_result.get("error"):
+                raise RuntimeError(
+                    f"OpenSearch schema migration task failed for {item['alias']}: {task_result['error']}"
+                )
+            response = task_result.get("response") or {}
+            failures = response.get("failures") or []
+            if response.get("timed_out") or failures:
+                raise RuntimeError(
+                    f"OpenSearch schema migration failed for {item['alias']}: {failures[:3]}"
+                )
+            client.indices.refresh(index=index_name)
+            target_count = int(client.count(index=index_name)["count"])
         if target_count != source_count:
             raise RuntimeError(
                 f"OpenSearch schema migration count mismatch for {item['alias']}: "

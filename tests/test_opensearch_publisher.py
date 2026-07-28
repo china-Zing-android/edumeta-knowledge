@@ -54,6 +54,7 @@ class OpenSearchPublisherTests(unittest.TestCase):
 
     def test_schema_upgrade_reindexes_legacy_alias_before_atomic_switch(self) -> None:
         calls: list[tuple[str, dict]] = []
+        state = {"target_count": 0}
 
         class FakeIndices:
             def exists(self, **kwargs):
@@ -71,6 +72,9 @@ class OpenSearchPublisherTests(unittest.TestCase):
             def update_aliases(self, **kwargs):
                 calls.append(("update_aliases", kwargs))
 
+            def refresh(self, **kwargs):
+                calls.append(("refresh", kwargs))
+
         class FakeCluster:
             def health(self, **kwargs):
                 calls.append(("health", kwargs))
@@ -80,23 +84,33 @@ class OpenSearchPublisherTests(unittest.TestCase):
             def __init__(self):
                 self.indices = FakeIndices()
                 self.cluster = FakeCluster()
+                self.tasks = self
 
             def reindex(self, **kwargs):
                 calls.append(("reindex", kwargs))
-                return {"created": 12, "updated": 0, "failures": []}
+                return {"task": "node:12"}
+
+            def get(self, **kwargs):
+                calls.append(("task_get", kwargs))
+                state["target_count"] = 12
+                return {"completed": True, "response": {"created": 12, "updated": 0, "failures": []}}
 
             def count(self, **kwargs):
-                return {"count": 12}
+                return {"count": 12 if kwargs["index"] == "l1_catalog_entries_v1" else state["target_count"]}
 
         item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
         _ensure_index_and_alias(FakeClient(), item)
 
         self.assertEqual(item["write_index"], "l1_catalog_entries_v2")
-        self.assertEqual([name for name, _ in calls], ["create", "health", "reindex", "update_aliases"])
+        self.assertEqual(
+            [name for name, _ in calls],
+            ["create", "health", "reindex", "task_get", "refresh", "update_aliases"],
+        )
         reindex = calls[2][1]
         self.assertEqual(reindex["body"]["source"]["index"], ["l1_catalog_entries_v1"])
         self.assertEqual(reindex["body"]["dest"]["index"], "l1_catalog_entries_v2")
-        actions = calls[3][1]["body"]["actions"]
+        self.assertFalse(reindex["wait_for_completion"])
+        actions = calls[5][1]["body"]["actions"]
         self.assertEqual(actions, [
             {"remove": {"index": "l1_catalog_entries_v1", "alias": "l1_catalog_entries_current"}},
             {"add": {"index": "l1_catalog_entries_v2", "alias": "l1_catalog_entries_current"}},
@@ -116,6 +130,9 @@ class OpenSearchPublisherTests(unittest.TestCase):
             def update_aliases(self, **kwargs):
                 raise AssertionError("alias must not move when migration validation fails")
 
+            def refresh(self, **kwargs):
+                return None
+
         class FakeCluster:
             def health(self, **kwargs):
                 return {"status": "yellow", "timed_out": False}
@@ -124,9 +141,13 @@ class OpenSearchPublisherTests(unittest.TestCase):
             def __init__(self):
                 self.indices = FakeIndices()
                 self.cluster = FakeCluster()
+                self.tasks = self
 
             def reindex(self, **kwargs):
-                return {"created": 11, "updated": 0, "failures": []}
+                return {"task": "node:11"}
+
+            def get(self, **kwargs):
+                return {"completed": True, "response": {"created": 11, "updated": 0, "failures": []}}
 
             def count(self, **kwargs):
                 return {"count": 12 if kwargs["index"] == "l1_catalog_entries_v1" else 11}
@@ -134,6 +155,40 @@ class OpenSearchPublisherTests(unittest.TestCase):
         item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
         with self.assertRaisesRegex(RuntimeError, "schema migration count mismatch"):
             _ensure_index_and_alias(FakeClient(), item)
+
+    def test_completed_schema_reindex_resumes_at_alias_switch_without_reindex(self) -> None:
+        alias_updates: list[dict] = []
+
+        class FakeIndices:
+            def exists(self, **kwargs):
+                return True
+
+            def get_mapping(self, **kwargs):
+                return {kwargs["index"]: {"mappings": {"_meta": {"edumeta_schema_version": "2"}}}}
+
+            def get_alias(self, **kwargs):
+                return {"l1_catalog_entries_v1": {}}
+
+            def update_aliases(self, **kwargs):
+                alias_updates.append(kwargs)
+
+        class FakeClient:
+            def __init__(self):
+                self.indices = FakeIndices()
+
+            def count(self, **kwargs):
+                return {"count": 100732}
+
+            def reindex(self, **kwargs):
+                raise AssertionError("a complete destination must not be reindexed again")
+
+        item = load_publish_plan(Path("data/normalized/mit"), "mit")["catalog_entries"]
+        _ensure_index_and_alias(FakeClient(), item)
+
+        self.assertEqual(len(alias_updates), 1)
+        self.assertEqual(alias_updates[0]["body"]["actions"][-1], {
+            "add": {"index": "l1_catalog_entries_v2", "alias": "l1_catalog_entries_current"}
+        })
 
     def test_post_index_audit_rejects_wrong_top_catalog_match(self) -> None:
         class FakeClient:

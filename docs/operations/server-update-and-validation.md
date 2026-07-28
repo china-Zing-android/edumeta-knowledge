@@ -160,7 +160,7 @@ ss -lntp | grep -E ':(8000|18765)\b'
 
 每所学校应最终显示 `published` 或 `unchanged`。`accepted`、`parsing`、`validating`、`publishing` 都是中间状态，不是完成状态。
 
-如果服务器从旧 OpenSearch mapping 首次升级，新版本会在第一所学校发布时自动执行一次索引 schema 迁移：创建按 schema 版本命名的新物理索引、复制旧 alias 的全部数据、核对条数并原子切换 alias。旧物理索引保留用于回滚，不需要删除 OpenSearch volume。第一所可能比后续学校稍慢。
+如果服务器从旧 OpenSearch mapping 首次升级，新版本会在第一所学校发布时自动执行一次可恢复的索引 schema 迁移：创建按 schema 版本命名的新物理索引，通过异步 task 复制旧 alias 的全部数据、核对条数并原子切换 alias。若服务端已经复制完成但客户端曾中断，下一次会根据源/目标条数直接从 alias 切换继续，不会重复复制。旧物理索引保留用于回滚，不需要删除 OpenSearch volume。第一所可能比后续学校稍慢。
 
 ### 5. 导入全部通过门禁的院校
 
