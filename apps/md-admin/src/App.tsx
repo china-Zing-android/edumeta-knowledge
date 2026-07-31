@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   ArrowRight,
+  Copy,
   Book,
   CheckmarkFilled,
   CloudUpload,
@@ -45,14 +46,16 @@ import {
   PreviewItem,
   UniversityVersion,
 } from './api'
+import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_FLOW, RETRIEVAL_ROLES } from './schemaDocs'
 import './styles.css'
 
-type Page = 'workspace' | 'batches' | 'docs' | 'settings'
+type Page = 'workspace' | 'files' | 'batches' | 'docs' | 'settings'
 type ArtifactPage = { artifact: string; offset: number; limit: number; total: number; items: Array<Record<string, unknown>> }
 type Guide = { entity: string; label: string; purpose: string; why: string; minimum: string[]; links: string[]; schema: { required?: string[]; properties?: Record<string, { type?: string | string[]; enum?: string[] }> } }
 
 const NAV_ITEMS: Array<{ id: Page; label: string; icon: typeof Activity }> = [
-  { id: 'workspace', label: '更新工作台', icon: CloudUpload },
+  { id: 'workspace', label: '更新院校', icon: CloudUpload },
+  { id: 'files', label: '已上传文件', icon: Document },
   { id: 'batches', label: '运行批次', icon: Activity },
   { id: 'docs', label: 'JSONL 结构说明', icon: Book },
   { id: 'settings', label: '系统配置状态', icon: Settings },
@@ -91,6 +94,19 @@ function statusKind(status: string): 'green' | 'red' | 'blue' | 'gray' | 'warm-g
   return 'blue'
 }
 
+function failureStage(run: IngestionRun): string | null {
+  const failure = run.stage_failures?.[0]
+  if (!failure) return null
+  const stage = failure.stage ?? failure.phase
+  return typeof stage === 'string' ? stage : null
+}
+
+function runStatusDetail(run: IngestionRun): string | null {
+  if (run.error_message) return run.error_message
+  const stage = failureStage(run)
+  return stage ? `失败阶段：${stage}` : null
+}
+
 function WeKnoraState({ run }: { run: IngestionRun }) {
   if (run.weknora?.summary === 'disabled') return <Tag type="gray">WeKnora 未启用</Tag>
   if (run.weknora?.summary === 'partial_failure') return <span><Tag type="red">L1 已发布，WeKnora 部分失败</Tag>{run.weknora_error && <span className="subcell">{run.weknora_error}</span>}</span>
@@ -118,7 +134,7 @@ function App() {
       const [config, batchPayload, runPayload] = await Promise.all([
         apiFetch<AdminStatus>('/v1/admin/config/status'),
         apiFetch<{ items: Batch[] }>('/v1/admin/ingestion-batches?limit=30'),
-        apiFetch<{ items: IngestionRun[] }>('/v1/admin/ingestion-runs?limit=50'),
+        apiFetch<{ items: IngestionRun[] }>('/v1/admin/ingestion-runs?limit=500'),
       ])
       setStatus(config)
       setBatches(batchPayload.items)
@@ -157,7 +173,7 @@ function App() {
           <div className="rail-label">CONTENT OPERATIONS</div>
           <nav aria-label="主导航">
             {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-              <button key={id} className={`nav-item ${page === id ? 'is-active' : ''}`} onClick={() => setPage(id)}>
+              <button key={id} className={`nav-item ${page === id ? 'is-active' : ''}`} onClick={() => setPage(id)} aria-current={page === id ? 'page' : undefined}>
                 <Icon size={18} /><span>{label}</span>{page === id && <ArrowRight size={16} />}
               </button>
             ))}
@@ -177,9 +193,9 @@ function App() {
               <h1>{NAV_ITEMS.find((item) => item.id === page)?.label}</h1>
               <p className="heading-copy">把 Markdown 作为唯一源文件，观察每次解析、校验、发布和下游导入。</p>
             </div>
-            <div className="heading-meta"><span className="mono">L1 / L2</span><span>内部网络</span></div>
           </div>
-          {page === 'workspace' && <Workspace onBatchCreated={loadOverview} onRunSelected={setSelectedRun} />}
+          {page === 'workspace' && <Workspace onBatchCreated={loadOverview} onRunSelected={setSelectedRun} onOpenFiles={() => setPage('files')} />}
+          {page === 'files' && <FilesPage runs={runs} onRunSelected={setSelectedRun} onRefresh={loadOverview} />}
           {page === 'batches' && <BatchPage batches={batches} selectedBatch={selectedBatch} onSelectBatch={setSelectedBatch} onRunSelected={setSelectedRun} />}
           {page === 'docs' && <DocsPage />}
           {page === 'settings' && <SettingsPage status={status} />}
@@ -190,7 +206,7 @@ function App() {
   )
 }
 
-function Workspace({ onBatchCreated, onRunSelected }: { onBatchCreated: () => Promise<void>; onRunSelected: (id: string) => void }) {
+function Workspace({ onBatchCreated, onRunSelected, onOpenFiles }: { onBatchCreated: () => Promise<void>; onRunSelected: (id: string) => void; onOpenFiles: () => void }) {
   const [mode, setMode] = useState<'upload' | 'directory'>('upload')
   const [files, setFiles] = useState<File[]>([])
   const [rootId, setRootId] = useState('')
@@ -297,7 +313,7 @@ function Workspace({ onBatchCreated, onRunSelected }: { onBatchCreated: () => Pr
       <div className="section-actions"><Button kind="primary" renderIcon={ArrowRight} disabled={working || (mode === 'upload' ? files.length === 0 : !rootId)} onClick={() => void createPreview()}>{working ? '扫描中...' : '生成预览'}</Button>{message && <span className="action-message">{message}</span>}</div>
     </section>
     {preview && <PreviewSection preview={preview} working={working} onUpdate={updatePreviewItem} onCommit={() => void commit()} onDiscard={() => setPreview(null)} />}
-    <section className="workbench-section recent-section"><div className="section-title-row"><div><p className="eyebrow">RECENT RUNS</p><h2>最近运行</h2></div><button className="text-action" onClick={() => window.dispatchEvent(new Event('refresh-runs'))}>查看全部 <ArrowRight size={16} /></button></div><RecentRuns onRunSelected={onRunSelected} /></section>
+    <section className="workbench-section recent-section"><div className="section-title-row"><div><p className="eyebrow">UPLOADED FILES</p><h2>最近上传的文件</h2><p>每行都可以打开文件详情，查看处理阶段、L1 / WeKnora 状态和在线产物。</p></div><button className="text-action" onClick={onOpenFiles}>查看已上传文件 <ArrowRight size={16} /></button></div><RecentRuns onRunSelected={onRunSelected} /></section>
   </>
 }
 
@@ -318,14 +334,41 @@ function RecentRuns({ onRunSelected }: { onRunSelected: (id: string) => void }) 
   return <RunTable runs={runs} onRunSelected={onRunSelected} />
 }
 
+function FilesPage({ runs, onRunSelected, onRefresh }: { runs: IngestionRun[]; onRunSelected: (id: string) => void; onRefresh: () => Promise<void> }) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('全部')
+  const filterItems = ['全部', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '失败']
+  const filtered = runs.filter((run) => {
+    const haystack = `${run.source_filename ?? ''} ${run.university_id} ${run.run_id}`.toLowerCase()
+    const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase())
+    const matchesFilter = filter === '全部' || statusLabel(run.status) === filter
+    return matchesQuery && matchesFilter
+  })
+
+  return <section className="workbench-section files-section">
+    <div className="section-title-row">
+      <div><p className="eyebrow">UPLOADED FILES</p><h2>已上传文件</h2><p>这里展示所有已接收的 Markdown 文件。点击一行或“在线查看”，进入 raw、JSONL、差异和质量审计。</p></div>
+      <Button kind="ghost" renderIcon={Renew} onClick={() => void onRefresh()}>刷新列表</Button>
+    </div>
+    <div className="files-toolbar">
+      <TextInput id="files-query" size="sm" labelText="搜索文件" placeholder="按文件名、院校或运行 ID 搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} />
+      <Dropdown id="files-status" size="sm" titleText="状态筛选" label="全部" items={filterItems} selectedItem={filter} onChange={({ selectedItem }) => setFilter(selectedItem ?? '全部')} />
+      <span className="mono files-count">显示 {filtered.length} / {runs.length}</span>
+    </div>
+    {filtered.length ? <RunTable runs={filtered} onRunSelected={onRunSelected} /> : <EmptyState title="没有匹配文件" body={runs.length ? '换一个文件名、院校或状态筛选条件。' : '上传 Markdown 后，文件会出现在这里。'} />}
+  </section>
+}
+
 function RunTable({ runs, onRunSelected }: { runs: IngestionRun[]; onRunSelected: (id: string) => void }) {
-  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>文件</TableHeader><TableHeader>院校</TableHeader><TableHeader>阶段</TableHeader><TableHeader>L1</TableHeader><TableHeader>WeKnora</TableHeader><TableHeader>更新时间</TableHeader></TableRow></TableHead><TableBody>{runs.map((run) => <TableRow key={run.run_id} onClick={() => onRunSelected(run.run_id)} className="clickable-row"><TableCell><div className="file-cell"><Document size={18} /><div><strong>{run.source_filename || run.run_id}</strong><span className="mono">{run.run_id}</span></div></div></TableCell><TableCell><strong>{run.university_id}</strong><span className="subcell">{run.operation}</span></TableCell><TableCell><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag>{run.queue_position && <span className="subcell">队列第 {run.queue_position}</span>}</TableCell><TableCell>{run.status === 'published' ? <Tag type="green">已发布</Tag> : run.status === 'failed' ? <Tag type="red">失败</Tag> : <Tag type="blue">处理中</Tag>}</TableCell><TableCell><WeKnoraState run={run} /></TableCell><TableCell className="mono">{formatTime(run.updated_at)}</TableCell></TableRow>)}</TableBody></Table></div>
+  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>文件</TableHeader><TableHeader>院校</TableHeader><TableHeader>阶段与错误</TableHeader><TableHeader>L1</TableHeader><TableHeader>WeKnora</TableHeader><TableHeader>更新时间</TableHeader><TableHeader>查看</TableHeader></TableRow></TableHead><TableBody>{runs.map((run) => <TableRow key={run.run_id} onClick={() => onRunSelected(run.run_id)} className="clickable-row"><TableCell><div className="file-cell"><Document size={18} /><div><strong>{run.source_filename || run.run_id}</strong><span className="mono">{run.run_id}</span></div></div></TableCell><TableCell><strong>{run.university_id}</strong><span className="subcell">{run.operation}{run.source_size_bytes ? ` · ${formatBytes(run.source_size_bytes)}` : ''}</span></TableCell><TableCell><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag>{run.queue_position && <span className="subcell">队列第 {run.queue_position}</span>}{runStatusDetail(run) && <span className="run-error">{runStatusDetail(run)}</span>}</TableCell><TableCell>{run.opensearch_published || run.status === 'published' || run.status === 'unchanged' ? <Tag type="green">已发布</Tag> : run.status === 'failed' ? <Tag type="red">未发布</Tag> : <Tag type="blue">处理中</Tag>}</TableCell><TableCell><WeKnoraState run={run} /></TableCell><TableCell className="mono">{formatTime(run.updated_at)}</TableCell><TableCell><Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(run.run_id) }}>在线查看</Button></TableCell></TableRow>)}</TableBody></Table></div>
 }
 
 function BatchPage({ batches, selectedBatch, onSelectBatch, onRunSelected }: { batches: Batch[]; selectedBatch: string | null; onSelectBatch: (id: string) => void; onRunSelected: (id: string) => void }) {
   const [detail, setDetail] = useState<Batch | null>(null)
   useEffect(() => { if (!selectedBatch) { setDetail(null); return } void apiFetch<Batch>(`/v1/admin/ingestion-batches/${selectedBatch}`).then(setDetail).catch(() => setDetail(null)) }, [selectedBatch])
-  return <div className="batch-layout"><section className="workbench-section"><div className="section-title-row"><div><p className="eyebrow">QUEUE</p><h2>运行批次</h2></div><Button kind="ghost" renderIcon={Renew} onClick={() => window.location.reload()}>刷新</Button></div>{batches.length ? <div className="batch-list">{batches.map((batch) => <button key={batch.batch_id} className={`batch-row ${batch.batch_id === selectedBatch ? 'is-selected' : ''}`} onClick={() => onSelectBatch(batch.batch_id)}><div><strong>{batch.batch_id}</strong><span>{batch.mode === 'directory' ? '服务器目录' : '文件上传'} · {formatTime(batch.created_at)}</span></div><div className="batch-count"><strong>{batch.total_count}</strong><span>文件</span></div><Tag type={batch.status === 'completed' ? 'green' : batch.status === 'failed' ? 'red' : 'blue'}>{batch.status}</Tag><ArrowRight size={16} /></button>)}</div> : <EmptyState title="没有批次" body="从更新工作台创建第一个批次。" />}</section>{detail && <section className="workbench-section batch-detail"><div className="section-title-row"><div><p className="eyebrow">BATCH DETAIL</p><h2>{detail.batch_id}</h2><p>{detail.published_count} 已发布 · {detail.failed_count} 失败 · {detail.unchanged_count} 未变化{detail.rejected_count ? ` · ${detail.rejected_count} 项被拒绝` : ''}</p></div><Tag type="blue">{detail.status}</Tag></div>{detail.rejected_items?.map((item) => <div className="failure-callout" key={item.item_id}><ErrorFilled size={18} /><div><strong>{item.filename}</strong><span>{item.message}</span></div></div>)}<RunTable runs={detail.runs ?? []} onRunSelected={onRunSelected} /></section>}</div>
+  const batchStatus = (value: string) => ({ accepted: '已接收', partial: '部分提交', completed: '已完成', failed: '提交失败' }[value] ?? value)
+  const batchTag = (value: string): 'green' | 'red' | 'blue' => value === 'completed' ? 'green' : value === 'failed' ? 'red' : 'blue'
+  return <div className="batch-page"><section className="workbench-section batch-list-section"><div className="section-title-row"><div><p className="eyebrow">QUEUE</p><h2>运行批次</h2><p>以批次为单位查看接收、发布和失败范围。点选一行后，下方显示该批次的文件清单。</p></div><Button kind="ghost" renderIcon={Renew} onClick={() => window.location.reload()}>刷新列表</Button></div>{batches.length ? <div className="batch-table"><div className="batch-table-head"><span>批次</span><span>文件</span><span>已接收</span><span>已发布</span><span>失败</span><span>WeKnora 未启用</span><span>状态</span><span>更新时间</span><span aria-hidden="true" /></div>{batches.map((batch) => <button key={batch.batch_id} className={`batch-row ${batch.batch_id === selectedBatch ? 'is-selected' : ''}`} onClick={() => onSelectBatch(batch.batch_id)}><div><strong>{batch.batch_id}</strong><span>{batch.mode === 'directory' ? '服务器目录' : '文件上传'}{batch.source_relative_path ? ` / ${batch.source_relative_path}` : ''}</span></div><div className="batch-metric">{batch.total_count}</div><div className="batch-metric">{batch.accepted_count}</div><div className="batch-metric is-success">{batch.published_count}</div><div className="batch-metric is-failure">{batch.failed_count}</div><div className="batch-metric">{batch.weknora_disabled_count}</div><Tag type={batchTag(batch.status)}>{batchStatus(batch.status)}</Tag><span className="mono">{formatTime(batch.updated_at)}</span><ArrowRight size={16} /></button>)}</div> : <EmptyState title="没有批次" body="从更新院校创建第一个批次。" />}</section>{detail && <section className="workbench-section batch-detail"><div className="section-title-row"><div><p className="eyebrow">BATCH DETAIL</p><h2>{detail.batch_id}</h2><p>{detail.published_count} 个已发布，{detail.failed_count} 个失败，{detail.unchanged_count} 个内容未变化{detail.rejected_count ? `，${detail.rejected_count} 个单项被拒绝` : ''}</p></div><Tag type={batchTag(detail.status)}>{batchStatus(detail.status)}</Tag></div>{detail.rejected_items?.map((item) => <div className="failure-callout" key={item.item_id}><ErrorFilled size={18} /><div><strong>{item.filename}</strong><span>{item.message}</span></div></div>)}<RunTable runs={detail.runs ?? []} onRunSelected={onRunSelected} /></section>}</div>
 }
 
 function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose: () => void; onChanged: () => Promise<void> }) {
@@ -338,6 +381,7 @@ function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose:
   const [versions, setVersions] = useState<UniversityVersion[]>([])
   const [rollbackVersionId, setRollbackVersionId] = useState<string | null>(null)
   const [artifactQuery, setArtifactQuery] = useState('')
+  const [artifactOffset, setArtifactOffset] = useState(0)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   useEffect(() => {
@@ -345,7 +389,7 @@ function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose:
     void apiFetch<Record<string, any>>(`/v1/admin/ingestion-runs/${run.run_id}/diff`).then(setDiff).catch(() => setDiff(null))
     void apiFetch<{ items: UniversityVersion[] }>(`/v1/admin/universities/${encodeURIComponent(run.university_id)}/versions`).then((payload) => setVersions(payload.items)).catch(() => setVersions([]))
   }, [run.run_id, run.university_id])
-  useEffect(() => { void apiFetch<ArtifactPage>(`/v1/admin/ingestion-runs/${run.run_id}/artifacts/${artifact}/content?offset=0&limit=80`).then(setContent).catch(() => setContent(null)) }, [artifact, run.run_id])
+  useEffect(() => { void apiFetch<ArtifactPage>(`/v1/admin/ingestion-runs/${run.run_id}/artifacts/${artifact}/content?offset=${artifactOffset}&limit=80`).then(setContent).catch(() => setContent(null)) }, [artifact, artifactOffset, run.run_id])
   const forceEligible = run.status === 'failed' && JSON.stringify(run.quality_audits ?? {}).includes('needs_review')
   const runAction = async () => {
     if (!reason.trim()) return
@@ -369,7 +413,8 @@ function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose:
     } catch (caught) { setMessage(caught instanceof Error ? caught.message : '补导入失败') } finally { setBusy(false) }
   }
   const visibleContent = content && artifact === 'raw_markdown' && artifactQuery.trim() ? { ...content, items: content.items.filter((item) => String(item.text ?? '').toLowerCase().includes(artifactQuery.trim().toLowerCase())) } : content
-  return <section className="inspector"><div className="inspector-header"><div><p className="eyebrow">RUN DETAIL</p><h2>{run.source_filename || run.run_id}</h2><p className="mono">{run.run_id} · {run.university_id} · {run.version_id}</p></div><div className="inspector-actions"><a className="download-link" href={artifactDownloadUrl(run.run_id, 'all')}><Download size={16} />全部下载</a>{run.status === 'published' && run.is_current && <Button kind="tertiary" size="sm" disabled={busy} onClick={() => void importCurrent()}>补导入当前版本</Button>}{forceEligible && <Button kind="danger--tertiary" size="sm" onClick={() => setAction('force')}>强制发布</Button>}<Button kind="ghost" size="sm" hasIconOnly renderIcon={Undo} iconDescription="关闭" onClick={onClose} /></div></div>{message && <InlineNotification kind="info" lowContrast title={message} onCloseButtonClick={() => setMessage(null)} />}{run.status === 'failed' && <div className="failure-callout"><ErrorFilled size={20} /><div><strong>{run.error_message || '运行失败'}</strong><span>失败阶段和质量审计信息保留在下方。</span></div></div>}<div className="inspector-meta"><div><span>状态</span><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag></div><div><span>L1</span><strong>{run.opensearch_published ? '已发布' : '未发布'}</strong></div><div><span>WeKnora</span><WeKnoraState run={run} /></div><div><span>更新时间</span><strong>{formatTime(run.updated_at)}</strong></div></div><VersionHistory versions={versions} onRollback={(versionId) => { setRollbackVersionId(versionId); setAction('rollback') }} /><Tabs><TabList aria-label="运行详情"><Tab>产物查看</Tab><Tab>差异摘要</Tab><Tab>质量审计</Tab></TabList><TabPanels><TabPanel><div className="artifact-viewer"><div className="artifact-rail">{artifacts.filter((item) => item.available).map((item) => <button key={item.artifact} className={artifact === item.artifact ? 'is-active' : ''} onClick={() => setArtifact(item.artifact)}><Document size={16} /><span>{item.artifact === 'raw_markdown' ? 'raw.md' : item.artifact}</span><small>{formatBytes(item.size_bytes)}</small></button>)}</div><div className="artifact-content"><div className="artifact-toolbar"><span className="mono">{content?.total ?? 0} 行{artifactQuery && visibleContent ? ` · 命中 ${visibleContent.items.length}` : ''}</span>{artifact === 'raw_markdown' && <TextInput id="artifact-search" size="sm" labelText="搜索 raw" hideLabel placeholder="搜索 raw 内容" decorator={<Search size={14} />} value={artifactQuery} onChange={(event) => setArtifactQuery(event.target.value)} />}<a href={artifactDownloadUrl(run.run_id, artifact)} className="download-link"><Download size={14} />下载文件</a></div>{visibleContent?.items.length ? artifact === 'raw_markdown' ? <pre className="raw-viewer">{visibleContent.items.map((item) => `${String(item.line).padStart(5, ' ')}  ${String(item.text ?? '')}`).join('\n')}</pre> : <div className="jsonl-list">{visibleContent.items.map((item, index) => <div key={index} className="jsonl-record"><span className="line-number">{String(item.line).padStart(4, '0')}</span><code>{JSON.stringify(item.record ?? item, null, 2)}</code></div>)}</div> : <EmptyState title="产物不可用" body={artifactQuery ? '没有匹配的行。' : '该运行尚未生成此文件。'} />}</div></div></TabPanel><TabPanel><DiffView diff={diff} /></TabPanel><TabPanel><AuditView run={run} /></TabPanel></TabPanels></Tabs><Modal open={action !== null} modalHeading={action === 'force' ? '确认强制发布' : '确认回滚'} primaryButtonText={busy ? '提交中...' : '确认'} secondaryButtonText="取消" onRequestClose={() => { setAction(null); setRollbackVersionId(null) }} onRequestSubmit={(event) => { event.preventDefault(); void runAction() }}><p className="modal-copy">{action === 'rollback' ? '这会切换 PostgreSQL current、OpenSearch current 和 Fast Router 版本缓存，不会删除 WeKnora 远端文档。请填写操作原因。' : '这会改变当前检索数据。请填写强制发布原因，提交后会留下审计记录。'}</p><TextInput id="action-reason" labelText="操作原因" value={reason} onChange={(event) => setReason(event.target.value)} /></Modal></section>
+  const pageEnd = content ? Math.min(content.offset + content.items.length, content.total) : 0
+  return <section className="inspector"><div className="inspector-header"><div><p className="eyebrow">RUN DETAIL</p><h2>{run.source_filename || run.run_id}</h2><p className="mono">{run.run_id} · {run.university_id} · {run.version_id}</p></div><div className="inspector-actions"><a className="download-link" href={artifactDownloadUrl(run.run_id, 'all')}><Download size={16} />全部下载</a>{run.status === 'published' && run.is_current && <Button kind="tertiary" size="sm" disabled={busy} onClick={() => void importCurrent()}>补导入当前版本</Button>}{forceEligible && <Button kind="danger--tertiary" size="sm" onClick={() => setAction('force')}>强制发布</Button>}<Button kind="ghost" size="sm" hasIconOnly renderIcon={Undo} iconDescription="关闭" onClick={onClose} /></div></div>{message && <InlineNotification kind="info" lowContrast title={message} onCloseButtonClick={() => setMessage(null)} />}{run.status === 'failed' && <div className="failure-callout"><ErrorFilled size={20} /><div><strong>{run.error_message || '运行失败'}</strong><span>失败阶段和质量审计信息保留在下方。</span></div></div>}<div className="inspector-meta"><div><span>状态</span><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag></div><div><span>L1</span><strong>{run.opensearch_published ? '已发布' : '未发布'}</strong></div><div><span>WeKnora</span><WeKnoraState run={run} /></div><div><span>更新时间</span><strong>{formatTime(run.updated_at)}</strong></div></div><VersionHistory versions={versions} onRollback={(versionId) => { setRollbackVersionId(versionId); setAction('rollback') }} /><Tabs><TabList aria-label="运行详情"><Tab>产物查看</Tab><Tab>差异摘要</Tab><Tab>质量审计</Tab></TabList><TabPanels><TabPanel><div className="artifact-viewer"><div className="artifact-rail">{artifacts.filter((item) => item.available).map((item) => <button key={item.artifact} className={artifact === item.artifact ? 'is-active' : ''} onClick={() => { setArtifact(item.artifact); setArtifactOffset(0); setArtifactQuery('') }}><Document size={16} /><span>{item.artifact === 'raw_markdown' ? 'raw.md' : item.artifact}</span><small>{formatBytes(item.size_bytes)}</small></button>)}</div><div className="artifact-content"><div className="artifact-heading"><div><strong>在线查看</strong><span>{artifact === 'raw_markdown' ? '原始 Markdown，按行加载' : 'JSONL 记录，按页加载'}</span></div><a href={artifactDownloadUrl(run.run_id, artifact)} className="download-link"><Download size={14} />下载文件</a></div><div className="artifact-toolbar"><span className="mono">{content?.total ?? 0} 行{artifactQuery && visibleContent ? `，当前页命中 ${visibleContent.items.length}` : ''}</span>{artifact === 'raw_markdown' && <TextInput id="artifact-search" size="sm" labelText="搜索 raw" hideLabel placeholder="搜索当前页内容" decorator={<Search size={14} />} value={artifactQuery} onChange={(event) => setArtifactQuery(event.target.value)} />}</div>{visibleContent?.items.length ? artifact === 'raw_markdown' ? <pre className="raw-viewer">{visibleContent.items.map((item) => `${String(item.line).padStart(5, ' ')}  ${String(item.text ?? '')}`).join('\n')}</pre> : <div className="jsonl-list">{visibleContent.items.map((item, index) => <div key={index} className="jsonl-record"><span className="line-number">{String(item.line).padStart(4, '0')}</span><code>{JSON.stringify(item.record ?? item, null, 2)}</code></div>)}</div> : <EmptyState title="产物不可用" body={artifactQuery ? '没有匹配的行。' : '该运行尚未生成此文件。'} />}<div className="artifact-pagination"><span className="mono">{content?.total ? `${content.offset + 1}-${pageEnd} / ${content.total}` : '暂无内容'}</span><div><Button kind="ghost" size="sm" disabled={artifactOffset === 0} onClick={() => setArtifactOffset(Math.max(0, artifactOffset - 80))}>上一页</Button><Button kind="ghost" size="sm" disabled={!content || pageEnd >= content.total} onClick={() => setArtifactOffset(artifactOffset + 80)}>下一页</Button></div></div></div></div></TabPanel><TabPanel><DiffView diff={diff} /></TabPanel><TabPanel><AuditView run={run} /></TabPanel></TabPanels></Tabs><Modal open={action !== null} modalHeading={action === 'force' ? '确认强制发布' : '确认回滚'} primaryButtonText={busy ? '提交中...' : '确认'} secondaryButtonText="取消" onRequestClose={() => { setAction(null); setRollbackVersionId(null) }} onRequestSubmit={(event) => { event.preventDefault(); void runAction() }}><p className="modal-copy">{action === 'rollback' ? '这会切换 PostgreSQL current、OpenSearch current 和 Fast Router 版本缓存，不会删除 WeKnora 远端文档。请填写操作原因。' : '这会改变当前检索数据。请填写强制发布原因，提交后会留下审计记录。'}</p><TextInput id="action-reason" labelText="操作原因" value={reason} onChange={(event) => setReason(event.target.value)} /></Modal></section>
 }
 
 function VersionHistory({ versions, onRollback }: { versions: UniversityVersion[]; onRollback: (versionId: string) => void }) {
@@ -391,12 +436,29 @@ function AuditView({ run }: { run: IngestionRun }) {
   return <div className="audit-view">{audits.map(([key, value]) => <div className="audit-block" key={key}><h3>{key}</h3><pre>{JSON.stringify(value, null, 2)}</pre></div>)}</div>
 }
 
+function CopyExample({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+  return <div className="minimum-example"><div className="code-toolbar"><div><strong>MIT 最小结构</strong><span>JSONC 示例，复制后去掉注释即可作为 JSONL 记录</span></div><Button kind="ghost" size="sm" renderIcon={copied ? CheckmarkFilled : Copy} onClick={() => void copy()}>{copied ? '已复制' : '复制示例'}</Button></div><pre>{text}</pre></div>
+}
+
 function DocsPage() {
   const [guides, setGuides] = useState<Guide[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => { void apiFetch<{ items: Guide[] }>('/v1/admin/schema-catalog').then((payload) => { setGuides(payload.items); setSelected(payload.items[0]?.entity ?? null) }).catch(() => undefined) }, [])
   const current = guides.find((guide) => guide.entity === selected) ?? guides[0]
-  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何协作</h2><p>这些文件不是重复导出，而是把检索、事实、来源、关联和上下文拆成可以独立验证的层。</p></div></div><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>为什么要拆开</h3><p>{current.why}</p></div><div><h3>稳定关联字段</h3><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div><h3>最小结构</h3><div className="required-fields">{(current.schema.required ?? current.minimum).map((field) => <span key={field}><CheckmarkFilled size={14} />{field}</span>)}</div><h3>字段类型</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>约束</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).slice(0, 18).map(([field, property]) => <TableRow key={field}><TableCell className="mono">{field}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || 'object'}</TableCell><TableCell>{property.enum?.join(', ') || (current.schema.required?.includes(field) ? '必填' : '可选')}</TableCell></TableRow>)}</TableBody></Table></div></div>}</div></section>
+  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何协作</h2><p>这些文件不是重复导出，而是把检索、事实、来源、关联和上下文拆成可以独立验证的层。</p></div></div><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>为什么要拆开</h3><p>{current.why}</p></div><div><h3>稳定关联字段</h3><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div><h3>最小结构</h3><p className="section-note">下面是以 MIT 为例的最小必需结构。代码块使用 JSONC 注释，方便直接理解每个字段的作用。</p><CopyExample text={MINIMUM_EXAMPLES[current.entity] ?? '{}'} /><h3>字段说明</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>字段描述</TableHeader><TableHeader>MIT 示例</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).map(([field, property]) => { const note = getFieldNote(current.entity, field); return <TableRow key={field}><TableCell className="mono">{field}{current.schema.required?.includes(field) && <span className="required-mark">必填</span>}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || (property.enum ? 'enum' : 'object')}</TableCell><TableCell className="field-description">{note.description}{property.enum?.length ? <span className="field-constraint">可选值：{property.enum.join(', ')}</span> : null}</TableCell><TableCell><code className="field-example">{note.example}</code></TableCell></TableRow> })}</TableBody></Table></div></div>}</div><RetrievalGuide /></section>
+}
+
+function RetrievalGuide() {
+  return <section className="retrieval-guide"><div className="section-title-row"><div><p className="eyebrow">RETRIEVAL FLOW</p><h2>问题如何拆到不同 JSONL</h2><p>例子：用户问“mit里有哪些计算机相关的学科”。先缩小院校和主题，再查专业目录，最后绑定来源。与截止日期、学费相关的事实不会混入专业清单。</p></div></div><div className="retrieval-flow" aria-label="MIT 计算机相关学科问题的检索流程">{RETRIEVAL_FLOW.map((step, index) => <div className="flow-step" key={step.label}><div className={`flow-node ${index === 0 ? 'is-query' : index === RETRIEVAL_FLOW.length - 1 ? 'is-result' : ''}`}><span className="flow-label">{step.label}</span><strong>{step.title}</strong><p>{step.detail}</p></div>{index < RETRIEVAL_FLOW.length - 1 && <ArrowRight className="flow-connector" size={20} />}</div>)}</div><div className="retrieval-roles"><div className="retrieval-role-head"><span>JSONL</span><span>主要作用</span><span>它主要回答什么</span></div>{RETRIEVAL_ROLES.map((item) => <div className="retrieval-role" key={item.entity}><code>{item.entity}</code><strong>{item.role}</strong><span>{item.questions}</span></div>)}</div></section>
 }
 
 function SettingsPage({ status }: { status: AdminStatus | null }) {
