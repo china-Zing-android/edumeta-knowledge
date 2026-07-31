@@ -99,6 +99,7 @@ services:
       WEKNORA_API_KEY_HEADER: ${WEKNORA_API_KEY_HEADER:-X-API-Key}
       WEKNORA_SEARCH_TIMEOUT_SECONDS: ${WEKNORA_SEARCH_TIMEOUT_SECONDS:-2.8}
       TRACE_LOG_PATH: ${TRACE_LOG_PATH:-/app/data/traces/retrieval.jsonl}
+      ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
     volumes:
       - ingestion_data:/app/data/ingestions
       - batch_import_state:/app/data/import-state
@@ -120,6 +121,25 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+
+  md-admin:
+    image: edumeta-md-admin:local
+    build:
+      context: ..
+      dockerfile: apps/md-admin/Dockerfile
+      args:
+        NPM_REGISTRY: ${MD_ADMIN_NPM_REGISTRY:-https://registry.npmjs.org}
+        VITE_API_BASE_URL: ${MD_ADMIN_API_BASE_URL:-http://127.0.0.1:8000}
+    ports:
+      - "${MD_ADMIN_BIND_HOST:-127.0.0.1}:${MD_ADMIN_PORT:-3000}:80"
+    depends_on:
+      fast-router:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   tool-gateway:
     build:

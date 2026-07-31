@@ -11,6 +11,7 @@ from typing import Any
 
 
 PARSER_CONTRACT_VERSION = "8"
+MAX_MD_FILE_BYTES = 20 * 1024 * 1024
 
 
 class QualityGateError(RuntimeError):
@@ -26,6 +27,7 @@ def run_pre_publish_audit(
     *,
     markdown_text: str | None = None,
     parser_summary: dict[str, Any] | None = None,
+    allow_needs_review: bool = False,
 ) -> dict[str, Any]:
     from catalog_parser.validation import validate_school
 
@@ -40,8 +42,13 @@ def run_pre_publish_audit(
         **quality,
         "validation_status": validation["status"],
         "validation_failures": validation["failures"],
+        "quality_gate_status": quality["audit_status"],
     }
     if validation["status"] != "passed" or quality["audit_status"] != "passed":
+        if allow_needs_review and validation["status"] == "passed" and quality["audit_status"] == "needs_review":
+            report["audit_status"] = "needs_review"
+            report["failures"] = list(quality["failures"])
+            return report
         combined = list(dict.fromkeys([*validation["failures"], *quality["failures"]]))
         if quality["audit_status"] == "needs_review":
             combined.append("quality_review_required")
@@ -93,17 +100,21 @@ class IngestionService:
         self.postgres_dsn = postgres_dsn
         self.opensearch_url = opensearch_url
         self.raw_root = raw_root
-        self.executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ingestion")
+        self.workers = max(1, workers)
+        self.executor = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="ingestion")
         self.on_published = on_published
         self._futures: dict[str, Any] = {}
         self._lock = threading.Lock()
+        self._scheduler_stop = threading.Event()
         self._fail_interrupted_runs()
+        self._scheduler = threading.Thread(target=self._schedule_loop, name="ingestion-scheduler", daemon=True)
+        self._scheduler.start()
 
     def _fail_interrupted_runs(self) -> None:
         import psycopg
         from psycopg.types.json import Jsonb
 
-        interrupted = ("accepted", "parsing", "weknora_preparing", "validating", "publishing")
+        interrupted = ("parsing", "weknora_preparing", "validating", "publishing")
         with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -145,6 +156,109 @@ class IngestionService:
                     (university_id, university_id),
                 )
 
+    def shutdown(self) -> None:
+        self._scheduler_stop.set()
+        if getattr(self, "_scheduler", None):
+            self._scheduler.join(timeout=3)
+        self.executor.shutdown(wait=False, cancel_futures=False)
+
+    def _schedule_loop(self) -> None:
+        while not self._scheduler_stop.is_set():
+            try:
+                self._schedule_available_runs()
+            except Exception:
+                # The next iteration retries after a transient database/runtime failure.
+                pass
+            self._scheduler_stop.wait(0.5)
+
+    def _schedule_available_runs(self) -> None:
+        with self._lock:
+            self._futures = {run_id: future for run_id, future in self._futures.items() if not future.done()}
+            active_count = sum(1 for future in self._futures.values() if not future.done())
+            available = self.workers - active_count
+        if available <= 0:
+            return
+
+        import psycopg
+        claimed: list[dict[str, Any]] = []
+        with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT run_id, university_id, school_tier, version_id, input_hash,
+                       force_publish_requested, force_publish_reason, requested_metadata,
+                       weknora_kb_operation, weknora_knowledge_base_id
+                  FROM ingestion_runs
+                 WHERE status='accepted'
+                 ORDER BY created_at, run_id
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT %s
+                """,
+                (available,),
+            )
+            rows = cursor.fetchall()
+            if not rows:
+                return
+            run_ids = [row[0] for row in rows]
+            cursor.execute(
+                """
+                UPDATE ingestion_runs
+                   SET status='parsing', queue_claimed_at=now(), started_at=COALESCE(started_at, now()), updated_at=now()
+                 WHERE run_id = ANY(%s)
+                """,
+                (run_ids,),
+            )
+            for run_id, university_id, school_tier, version_id, input_hash, force_requested, force_reason, requested_metadata, kb_operation, target_kb_id in rows:
+                claimed.append({
+                    "run_id": run_id,
+                    "university_id": university_id,
+                    "school_tier": school_tier,
+                    "version_id": version_id,
+                    "input_hash": input_hash,
+                    "force_publish": bool(force_requested),
+                    "force_publish_reason": force_reason,
+                    "requested_metadata": dict(requested_metadata or {}),
+                    "kb_operation": kb_operation,
+                    "target_kb_id": target_kb_id,
+                })
+
+        for item in claimed:
+            run_dir = self.raw_root / item["university_id"] / item["run_id"]
+            raw_path = run_dir / "input.md"
+            try:
+                with self._lock:
+                    future = self.executor.submit(
+                        self._process,
+                        item["run_id"],
+                        item["university_id"],
+                        item["school_tier"],
+                        item["version_id"],
+                        item["input_hash"],
+                        raw_path,
+                        run_dir,
+                        item["requested_metadata"],
+                        item["kb_operation"],
+                        item["target_kb_id"],
+                        item["force_publish"],
+                        item["force_publish_reason"],
+                    )
+                    self._futures[item["run_id"]] = future
+            except Exception as exc:
+                self._record_queue_failure(item["run_id"], str(exc))
+
+    def _record_queue_failure(self, run_id: str, reason: str) -> None:
+        import psycopg
+        from psycopg.types.json import Jsonb
+
+        with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE ingestion_runs
+                   SET status='failed', error_message=%s, stage_failures=%s, finished_at=now(), updated_at=now()
+                 WHERE run_id=%s
+                """,
+                (reason, Jsonb([{"stage": "queue", "reason": reason}]), run_id),
+            )
+
     @classmethod
     def from_env(cls) -> "IngestionService | None":
         dsn = os.getenv("POSTGRES_DSN", "").strip()
@@ -171,11 +285,17 @@ class IngestionService:
         aliases: list[str] | None = None,
         weknora_knowledge_base_id: str | None = None,
         create_new_weknora_kb: bool = False,
+        batch_id: str | None = None,
+        source_relative_path: str | None = None,
+        source_root_id: str | None = None,
+        source_mode: str = "direct",
     ) -> dict[str, Any]:
         if school_tier not in {"core", "non_core"}:
             raise ValueError("school_tier must be core or non_core")
         if not filename.lower().endswith(".md"):
             raise ValueError("file must be Markdown (.md)")
+        if len(content) > MAX_MD_FILE_BYTES:
+            raise ValueError("Markdown file exceeds the 20 MiB limit")
         if not content.strip():
             raise ValueError("Markdown file is empty")
         university_id = university_id.strip().lower()
@@ -254,32 +374,21 @@ class IngestionService:
                     """
                     INSERT INTO ingestion_runs
                       (run_id, university_id, school_tier, operation, version_id, input_hash, status,
-                       weknora_knowledge_base_id, weknora_kb_operation)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       weknora_knowledge_base_id, weknora_kb_operation, batch_id,
+                       source_filename, source_size_bytes, source_relative_path, source_root_id,
+                       source_mode, requested_metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         run_id, university_id, school_tier, operation, target_version, input_hash,
-                        "unchanged" if unchanged else "accepted", target_kb_id, kb_operation,
+                        "unchanged" if unchanged else "accepted", target_kb_id, kb_operation, batch_id,
+                        filename, len(content), source_relative_path, source_root_id, source_mode,
+                        Jsonb(requested_metadata),
                     ),
                 )
         if unchanged:
             return {"run_id": run_id, "university_id": university_id, "status": "unchanged", "operation": operation, "input_hash": input_hash}
 
-        future = self.executor.submit(
-            self._process,
-            run_id,
-            university_id,
-            school_tier,
-            version_id,
-            input_hash,
-            raw_path,
-            run_dir,
-            requested_metadata,
-            kb_operation,
-            target_kb_id,
-        )
-        with self._lock:
-            self._futures[run_id] = future
         return {"run_id": run_id, "university_id": university_id, "status": "accepted", "operation": operation, "input_hash": input_hash}
 
     def _process(
@@ -294,6 +403,8 @@ class IngestionService:
         requested_metadata: dict[str, Any],
         kb_operation: str,
         target_kb_id: str | None,
+        force_publish: bool = False,
+        force_publish_reason: str | None = None,
     ) -> None:
         try:
             import psycopg
@@ -340,17 +451,35 @@ class IngestionService:
                 university_id,
                 markdown_text=raw_path.read_text("utf-8"),
                 parser_summary=result.summary,
+                allow_needs_review=force_publish,
             )
-            resolved_kb_id, resolved_kb_name = self._prepare_weknora_knowledge_base(
-                run_id,
-                kb_operation,
-                target_kb_id,
-                university_id,
-                str(metadata.get("university_name") or university_id),
-            )
+            if force_publish:
+                pre_audit["forced_publish"] = True
+                pre_audit["force_publish_reason"] = force_publish_reason
+            weknora_error: str | None = None
+            from .weknora_worker import weknora_import_enabled
+            if not weknora_import_enabled() or not os.getenv("WEKNORA_BASE_URL", "").strip():
+                resolved_kb_id, resolved_kb_name = None, None
+            else:
+                try:
+                    resolved_kb_id, resolved_kb_name = self._prepare_weknora_knowledge_base(
+                        run_id,
+                        kb_operation,
+                        target_kb_id,
+                        university_id,
+                        str(metadata.get("university_name") or university_id),
+                    )
+                except Exception as exc:  # WeKnora is optional and must not block L1.
+                    resolved_kb_id, resolved_kb_name = None, None
+                    weknora_error = str(exc)
+                    with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE ingestion_runs SET weknora_error=%s, updated_at=now() WHERE run_id=%s",
+                            (weknora_error, run_id),
+                        )
             for source in result.source_registry:
                 source["weknora_knowledge_base_id"] = resolved_kb_id
-                source["weknora_import_status"] = "pending"
+                source["weknora_import_status"] = "failed" if weknora_error else ("pending" if resolved_kb_id else "not_required")
                 source["weknora_knowledge_id"] = None
                 source["weknora_document_id"] = None
                 source["weknora_chunk_ids"] = []
@@ -358,13 +487,14 @@ class IngestionService:
                 source["weknora_import_job_id"] = None
             for manifest in result.url_manifest:
                 manifest["weknora_collection_id"] = resolved_kb_id
-                manifest["import_status"] = "pending"
+                manifest["import_status"] = "failed" if weknora_error else ("pending" if resolved_kb_id else "not_required")
                 manifest["weknora_knowledge_id"] = None
                 manifest["weknora_document_id"] = None
                 manifest["weknora_chunk_ids"] = []
                 manifest["weknora_tag_ids"] = []
                 manifest["weknora_import_job_id"] = None
             result.write_jsonl(normalized_dir)
+            self._persist_diff_summary(run_id, university_id, normalized_dir)
             with psycopg.connect(self.postgres_dsn) as connection, connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT record_counts FROM school_versions WHERE university_id=%s AND publication_state='current'",
@@ -445,7 +575,9 @@ class IngestionService:
                         "UPDATE ingestion_runs SET quality_audits=%s WHERE run_id=%s",
                         (Jsonb({"pre_publish": pre_audit, "post_publish": post_audit}), run_id),
                     )
-            if post_audit["audit_status"] != "passed":
+            if post_audit["audit_status"] != "passed" and not (
+                force_publish and post_audit.get("audit_status") == "needs_review"
+            ):
                 raise QualityGateError("post_publish", post_audit)
             activate_published_school(
                 normalized_dir,
@@ -458,11 +590,19 @@ class IngestionService:
                 with connection.transaction():
                     cursor = connection.cursor()
                     activate_school_version(cursor, university_id=university_id, version_id=version_id, run_id=run_id)
-                    self._enqueue_weknora_jobs(cursor, run_id, university_id, version_id)
+                    cursor.execute("UPDATE ingestion_runs SET finished_at=now(), updated_at=now() WHERE run_id=%s", (run_id,))
+                    self._enqueue_weknora_jobs(cursor, run_id, university_id, version_id, enabled=bool(resolved_kb_id))
+                    if force_publish:
+                        cursor.execute(
+                            "UPDATE ingestion_runs SET force_publish_requested=true, force_publish_reason=%s WHERE run_id=%s",
+                            (force_publish_reason, run_id),
+                        )
                     cursor.execute(
                         """
                         UPDATE universities
-                           SET weknora_knowledge_base_id=%s, weknora_knowledge_base_name=%s, updated_at=now()
+                           SET weknora_knowledge_base_id=COALESCE(%s, weknora_knowledge_base_id),
+                               weknora_knowledge_base_name=COALESCE(%s, weknora_knowledge_base_name),
+                               updated_at=now()
                          WHERE university_id=%s
                         """,
                         (resolved_kb_id, resolved_kb_name, university_id),
@@ -481,9 +621,12 @@ class IngestionService:
             with psycopg.connect(self.postgres_dsn) as connection:
                 with connection.transaction():
                     cursor = connection.cursor()
+                    audit_payload = {"failure": failure}
+                    if isinstance(exc, QualityGateError):
+                        audit_payload["quality_gate"] = exc.report
                     cursor.execute(
-                        "UPDATE ingestion_runs SET status='failed', error_message=%s, stage_failures=%s, updated_at=now() WHERE run_id=%s",
-                        (str(exc), Jsonb([failure]), run_id),
+                        "UPDATE ingestion_runs SET status='failed', error_message=%s, stage_failures=%s, quality_audits=%s, finished_at=now(), updated_at=now() WHERE run_id=%s",
+                        (str(exc), Jsonb([failure]), Jsonb(audit_payload), run_id),
                     )
                     cursor.execute(
                         "UPDATE school_versions SET publication_state='failed' WHERE university_id=%s AND version_id=%s AND publication_state='staging'",
@@ -505,9 +648,57 @@ class IngestionService:
 
         with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE ingestion_runs SET status=%s, updated_at=now() WHERE run_id=%s",
-                (status, run_id),
+                """
+                UPDATE ingestion_runs
+                   SET status=%s,
+                       started_at=CASE WHEN %s IN ('parsing', 'weknora_preparing', 'validating', 'publishing') THEN COALESCE(started_at, now()) ELSE started_at END,
+                       finished_at=CASE WHEN %s IN ('published', 'failed', 'unchanged') THEN now() ELSE finished_at END,
+                       updated_at=now()
+                 WHERE run_id=%s
+                """,
+                (status, status, status, run_id),
             )
+
+    def _persist_diff_summary(self, run_id: str, university_id: str, current_dir: Path) -> None:
+        """Keep a compact diff in the database so retention can remove artifacts safely."""
+        import psycopg
+        from psycopg.types.json import Jsonb
+
+        try:
+            with psycopg.connect(self.postgres_dsn) as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT r.run_id
+                      FROM ingestion_runs AS r
+                      JOIN school_versions AS v USING (university_id, version_id)
+                     WHERE r.university_id=%s AND v.publication_state='current'
+                     ORDER BY r.created_at DESC
+                     LIMIT 1
+                    """,
+                    (university_id,),
+                )
+                previous_row = cursor.fetchone()
+            if previous_row:
+                from catalog_parser.diff import diff_school
+
+                previous_dir = self.raw_root / university_id / previous_row[0] / "normalized"
+                if previous_dir.is_dir():
+                    summary = diff_school(previous_dir, current_dir, university_id, allow_active_removal=True)
+                else:
+                    summary = {"status": "changed", "university_id": university_id, "previous_run_id": previous_row[0], "entities": {}, "affected": {}}
+            else:
+                summary = {"status": "changed", "university_id": university_id, "previous_run_id": None, "entities": {}, "affected": {}}
+            with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+                cursor.execute("UPDATE ingestion_runs SET diff_summary=%s, updated_at=now() WHERE run_id=%s", (Jsonb(summary), run_id))
+        except Exception as exc:  # A report is helpful but must never block L1 publication.
+            try:
+                with psycopg.connect(self.postgres_dsn) as connection, connection.transaction(), connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE ingestion_runs SET diff_summary=%s, updated_at=now() WHERE run_id=%s",
+                        (Jsonb({"status": "unavailable", "university_id": university_id, "error": str(exc)}), run_id),
+                    )
+            except Exception:
+                pass
 
     def _prepare_weknora_knowledge_base(
         self,
@@ -553,7 +744,16 @@ class IngestionService:
             client.close()
 
     @staticmethod
-    def _enqueue_weknora_jobs(cursor: Any, run_id: str, university_id: str, version_id: str) -> None:
+    def _enqueue_weknora_jobs(
+        cursor: Any,
+        run_id: str,
+        university_id: str,
+        version_id: str,
+        *,
+        enabled: bool = True,
+    ) -> None:
+        if not enabled:
+            return
         cursor.execute(
             """
             INSERT INTO weknora_import_jobs
@@ -694,7 +894,10 @@ class IngestionService:
                 """
                 SELECT run_id, university_id, school_tier, operation, version_id, input_hash, status,
                        stage_failures, error_message, created_at, updated_at,
-                       weknora_knowledge_base_id, weknora_kb_operation, quality_audits
+                       weknora_knowledge_base_id, weknora_kb_operation, quality_audits,
+                       weknora_error, batch_id, source_filename, source_size_bytes, source_relative_path,
+                       source_root_id, source_mode, force_publish_requested, force_publish_reason,
+                       queue_claimed_at, started_at, finished_at
                   FROM ingestion_runs WHERE run_id=%s
                 """,
                 (run_id,),
@@ -712,6 +915,33 @@ class IngestionService:
                 (run_id,),
             )
             jobs = dict(cursor.fetchall())
+            cursor.execute(
+                "SELECT COALESCE(bool_or(weknora_import_status='failed'), false), COALESCE(bool_or(weknora_import_status='success'), false), count(*) FROM source_registry WHERE university_id=%s AND version_id=%s",
+                (row[1], row[4]),
+            )
+            weknora_state = cursor.fetchone()
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM school_versions WHERE university_id=%s AND version_id=%s AND publication_state='current')",
+                (row[1], row[4]),
+            )
+            is_current = bool(cursor.fetchone()[0])
+            cursor.execute(
+                "SELECT count(*) FROM ingestion_runs WHERE status='accepted' AND created_at < (SELECT created_at FROM ingestion_runs WHERE run_id=%s)",
+                (run_id,),
+            )
+            queue_position = int(cursor.fetchone()[0]) + 1 if row[6] == "accepted" else None
+        weknora_enabled = os.getenv("WEKNORA_IMPORT_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+        weknora_disabled = not (weknora_enabled and bool(os.getenv("WEKNORA_BASE_URL", "").strip()))
+        if row[6] == "published" and weknora_state and weknora_state[0]:
+            weknora_summary = "partial_failure"
+        elif weknora_disabled:
+            weknora_summary = "disabled"
+        elif row[14]:
+            weknora_summary = "partial_failure"
+        elif row[6] == "published":
+            weknora_summary = "pending_or_success"
+        else:
+            weknora_summary = "not_started"
         return {
             "run_id": row[0], "university_id": row[1], "school_tier": row[2], "operation": row[3], "version_id": row[4],
             "input_hash": row[5], "status": row[6], "counts": counts,
@@ -720,4 +950,19 @@ class IngestionService:
             "created_at": row[9].isoformat(), "updated_at": row[10].isoformat(),
             "weknora_knowledge_base_id": row[11], "weknora_kb_operation": row[12],
             "quality_audits": row[13],
+            "weknora_error": row[14],
+            "batch_id": row[15], "source_filename": row[16], "source_size_bytes": row[17],
+            "source_relative_path": row[18], "source_root_id": row[19], "source_mode": row[20],
+            "force_publish_requested": bool(row[21]), "force_publish_reason": row[22],
+            "queue_claimed_at": row[23].isoformat() if row[23] else None,
+            "started_at": row[24].isoformat() if row[24] else None,
+            "finished_at": row[25].isoformat() if row[25] else None,
+            "queue_position": queue_position,
+            "is_current": is_current,
+            "weknora": {
+                "summary": weknora_summary,
+                "failed": int(weknora_state[0]) if weknora_state else False,
+                "has_success": int(weknora_state[1]) if weknora_state else False,
+                "source_count": int(weknora_state[2]) if weknora_state else 0,
+            },
         }

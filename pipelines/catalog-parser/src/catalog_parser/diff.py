@@ -125,6 +125,15 @@ def diff_school(
         _collect_source_ids(current, changed_or_added_ids)
         | _collect_source_ids(previous, removed_ids)
     )
+    affected_source_urls: list[dict[str, str]] = []
+    seen_source_urls: set[str] = set()
+    for dataset in (previous, current):
+        for source in dataset.get("source_registry", []):
+            source_id = str(source.get("source_id") or "")
+            url = str(source.get("canonical_url") or source.get("source_url") or "")
+            if source_id in affected_source_ids and url and url not in seen_source_urls:
+                seen_source_urls.add(url)
+                affected_source_urls.append({"source_id": source_id, "url": url})
     affected_entry_ids = sorted(
         _collect_entry_ids(current, changed_or_added_ids)
         | _collect_entry_ids(previous, removed_ids)
@@ -155,6 +164,7 @@ def diff_school(
         "entities": entity_reports,
         "affected": {
             "source_ids": affected_source_ids,
+            "source_urls": sorted(affected_source_urls, key=lambda item: (item["source_id"], item["url"])),
             "entry_ids": affected_entry_ids,
             "fact_ids": affected_fact_ids,
             "url_ids": affected_url_ids,
