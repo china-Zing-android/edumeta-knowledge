@@ -1,4 +1,8 @@
 services:
+  opensearch:
+    ports: !override
+      - "127.0.0.1:${OPENSEARCH_SERVER_PORT:-19200}:9200"
+
   fast-router:
     environment:
       WEKNORA_IMPORT_ENABLED: ${WEKNORA_IMPORT_ENABLED:-false}
