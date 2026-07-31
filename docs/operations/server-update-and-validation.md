@@ -8,6 +8,7 @@
 
 | 服务 | 服务器本机 | Tailscale |
 |---|---|---|
+| PostgreSQL | `127.0.0.1:15432` | 不对外暴露 |
 | Fast Router HTTP | `http://127.0.0.1:8000` | `http://100.74.163.113:8000` |
 | OpenSearch HTTP | `http://127.0.0.1:19200` | 不对外暴露 |
 | MCP Gateway | `http://127.0.0.1:18765/mcp` | `http://100.74.163.113:18765/mcp` |
