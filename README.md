@@ -6,7 +6,7 @@ L1 Markdown knowledge retrieval with optional scoped WeKnora evidence. The runti
 
 Requirements: Docker Desktop or Docker Engine with Docker Compose.
 
-This Compose stack binds every published port to `127.0.0.1` by default. PostgreSQL and OpenSearch always remain localhost-only. Fast Router and MCP Gateway can bind to a private VPN address through `FAST_ROUTER_BIND_HOST` and `MCP_BIND_HOST`. Do not expose the unauthenticated ingestion or MCP endpoints to the public Internet without authentication and TLS.
+This Compose stack binds API ports and PostgreSQL to `127.0.0.1` by default. OpenSearch is intentionally published on `0.0.0.0` so other containers can reach it through the host IP; restrict port 9200 (or the configured host port) with a firewall or trusted network because the Security Plugin is disabled. Fast Router and MCP Gateway can bind to a private VPN address through `FAST_ROUTER_BIND_HOST` and `MCP_BIND_HOST`. Do not expose the unauthenticated ingestion or MCP endpoints to the public Internet without authentication and TLS.
 
 ```bash
 docker compose up -d --build
@@ -53,7 +53,8 @@ docker compose -f compose.yaml -f compose.server.yaml up -d --build
 This profile exposes Fast Router on both `127.0.0.1:8000` and
 `100.74.163.113:8000`, and MCP on both `127.0.0.1:18765/mcp` and
 `100.74.163.113:18765/mcp`. The host's existing port `8765` is not used. It
-also defaults `WEKNORA_IMPORT_ENABLED=false` so audited L1 batch ingestion does
+OpenSearch is available on `0.0.0.0:19200` so containers can use the server's
+host IP. It also defaults `WEKNORA_IMPORT_ENABLED=false` so audited L1 batch ingestion does
 not automatically upload URLs. See
 `docs/operations/server-update-and-validation.md` for the complete update,
 ingestion, regression, and MCP verification sequence.

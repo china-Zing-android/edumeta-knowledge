@@ -10,11 +10,11 @@
 |---|---|---|
 | PostgreSQL | `127.0.0.1:15432` | 不对外暴露 |
 | Fast Router HTTP | `http://127.0.0.1:8000` | `http://100.74.163.113:8000` |
-| OpenSearch HTTP | `http://127.0.0.1:19200` | 不对外暴露 |
+| OpenSearch HTTP | `http://127.0.0.1:19200` 或宿主机 IP | 由防火墙/可信网络限制 |
 | MCP Gateway | `http://127.0.0.1:18765/mcp` | `http://100.74.163.113:18765/mcp` |
 | MCP 健康检查 | `http://127.0.0.1:18765/health` | `http://100.74.163.113:18765/health` |
 
-宿主机原有 `8765` 端口不会被占用。PostgreSQL 和 OpenSearch 仍只绑定 `127.0.0.1`。
+宿主机原有 `8765` 端口不会被占用。PostgreSQL 仍只绑定 `127.0.0.1`；OpenSearch 的服务器端口 `19200` 绑定在 `0.0.0.0`，供其他容器通过宿主机 IP 访问。由于 Security Plugin 已关闭，必须限制该端口的网络来源，不能直接暴露到公网。
 
 服务器 profile 默认 `WEKNORA_IMPORT_ENABLED=false`。这表示 Markdown 仍会解析、入 PostgreSQL、发布 OpenSearch、提取 URL 并生成 queued job，但不会把 URL 发送给 WeKnora。
 

@@ -1,6 +1,6 @@
 # 服务器上传与检索验证
 
-以下命令都在服务器的项目根目录执行。Compose 端口只绑定 `127.0.0.1`，因此不能直接从公网访问。
+以下命令都在服务器的项目根目录执行。API 和 PostgreSQL 端口绑定在 `127.0.0.1`；OpenSearch 为支持其他容器通过宿主机 IP 访问，绑定在 `0.0.0.0:19200`，必须由防火墙或可信网络限制。
 
 如果客户端通过 Tailscale 访问服务器，在服务器 `.env` 中配置：
 
@@ -16,7 +16,7 @@ docker compose up -d --force-recreate fast-router tool-gateway
 docker compose ps
 ```
 
-PostgreSQL 和 OpenSearch 仍然只监听 `127.0.0.1`。不要在没有认证和 TLS 时把上述地址设置为公网接口或 `0.0.0.0`。
+PostgreSQL 仍然只监听 `127.0.0.1`。OpenSearch 当前关闭 Security Plugin，不要把 `0.0.0.0:19200` 暴露到公网；应使用防火墙限制来源，或在启用认证和 TLS 后再扩大访问范围。
 
 ## 1. 健康检查
 

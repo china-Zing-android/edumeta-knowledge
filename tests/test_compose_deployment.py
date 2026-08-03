@@ -49,6 +49,13 @@ def test_server_compose_exposes_dashboards_only_on_loopback_and_tailscale() -> N
     assert '${SERVER_TAILSCALE_HOST:-100.74.163.113}:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601' in text
 
 
+def test_server_compose_exposes_opensearch_on_all_host_interfaces() -> None:
+    text = (ROOT / "compose.server.yaml").read_text("utf-8")
+
+    assert '0.0.0.0:${OPENSEARCH_SERVER_PORT:-19200}:9200' in text
+    assert '127.0.0.1:${OPENSEARCH_SERVER_PORT:-19200}:9200' not in text
+
+
 def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
     services = payload["services"]
@@ -73,7 +80,7 @@ def test_only_api_services_have_configurable_private_bind_hosts() -> None:
     services = payload["services"]
 
     assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
-    assert services["opensearch"]["ports"] == ["127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"]
+    assert services["opensearch"]["ports"] == ["0.0.0.0:${OPENSEARCH_PORT:-9200}:9200"]
     assert services["fast-router"]["ports"] == [
         "${FAST_ROUTER_BIND_HOST:-127.0.0.1}:${FAST_ROUTER_PORT:-8000}:8000"
     ]

@@ -1,4 +1,4 @@
-Status: done
+Status: superseded
 
 # Private Network Bind Handoff
 
@@ -13,9 +13,17 @@ Allow Fast Router and MCP Gateway to be reached through a trusted private networ
 - Documented Tailscale binding with `100.74.163.113` and service recreation commands.
 - Added a Compose contract test preventing accidental remote exposure of PostgreSQL/OpenSearch.
 
-## Security Boundary
+## Superseded boundary
 
-The HTTP ingestion and MCP endpoints currently have no application authentication. Bind them only to a trusted VPN address. Public binding or `0.0.0.0` requires a reverse proxy, TLS, authentication, and firewall policy first.
+This handoff established the API-only private binding pattern. Its earlier
+OpenSearch localhost-only boundary was superseded by
+`docs/work/opensearch-host-bind-handoff.md`: OpenSearch is now published on
+`0.0.0.0` so external containers can reach it through the host IP. PostgreSQL
+remains loopback-only. Because OpenSearch Security Plugin is disabled, its
+published port must be restricted by firewall or trusted-network policy.
+
+The HTTP ingestion and MCP endpoints still have no application authentication;
+bind them only to a trusted VPN address.
 
 ## Verification
 
