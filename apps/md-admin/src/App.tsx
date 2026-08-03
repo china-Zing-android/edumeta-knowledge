@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   ArrowRight,
+  ArrowUp,
   Copy,
   Book,
   CheckmarkFilled,
@@ -48,7 +49,7 @@ import {
   SourceFile,
   UniversityVersion,
 } from './api'
-import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_DECISIONS, RETRIEVAL_FLOW, RETRIEVAL_ROLES } from './schemaDocs'
+import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_DECISIONS, RETRIEVAL_FLOW, RETRIEVAL_ROLES, SCHEMA_OVERVIEW } from './schemaDocs'
 import './styles.css'
 
 type Page = 'workspace' | 'files' | 'batches' | 'versions' | 'docs' | 'settings'
@@ -149,11 +150,13 @@ function statusKind(status: string): 'green' | 'red' | 'blue' | 'gray' | 'warm-g
 
 function sourceStatusLabel(status: string): string {
   if (status === 'not_submitted') return '未提交'
+  if (status === 'superseded') return '已替换'
   return statusLabel(status)
 }
 
 function sourceStatusKind(status: string): 'green' | 'red' | 'blue' | 'gray' {
   if (status === 'not_submitted') return 'gray'
+  if (status === 'superseded') return 'gray'
   return statusKind(status) === 'green' ? 'green' : status === 'failed' ? 'red' : 'blue'
 }
 
@@ -179,6 +182,44 @@ function WeKnoraState({ run }: { run: IngestionRun }) {
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return <div className="empty-state"><Document size={28} /><h3>{title}</h3><p>{body}</p></div>
+}
+
+function BackToTopButton() {
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const [showButton, setShowButton] = useState(false)
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    let sentinelVisible = true
+    const updateVisibility = () => {
+      const hasScroll = document.documentElement.scrollHeight > window.innerHeight + 8
+      setShowButton(hasScroll && !sentinelVisible)
+    }
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      sentinelVisible = entry.isIntersecting
+      updateVisibility()
+    }, { threshold: 0 })
+    intersectionObserver.observe(sentinel)
+
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateVisibility)
+    resizeObserver?.observe(document.documentElement)
+    resizeObserver?.observe(document.body)
+    window.addEventListener('resize', updateVisibility)
+    updateVisibility()
+
+    return () => {
+      intersectionObserver.disconnect()
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updateVisibility)
+    }
+  }, [])
+
+  return <>
+    <div ref={sentinelRef} className="scroll-top-sentinel" aria-hidden="true" />
+    {showButton && <Button className="back-to-top" kind="primary" size="sm" hasIconOnly renderIcon={ArrowUp} iconDescription="返回顶部" onClick={() => { const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' }) }} />}
+  </>
 }
 
 function App() {
@@ -258,6 +299,7 @@ function App() {
           </div>
         </aside>
         <main className="main-canvas">
+          <BackToTopButton />
           {error && <InlineNotification kind="error" lowContrast title="管理端接口不可用" subtitle={error} onCloseButtonClick={() => setError(null)} />}
           <div className="page-heading">
             <div>
@@ -424,15 +466,18 @@ function FilesPage({ runs, onRunSelected, onRefresh, onOpenSourceDirectory }: { 
   const [sourceFilter, setSourceFilter] = useState('全部')
   const [sourceRegionFilter, setSourceRegionFilter] = useState('全部')
   const [sourceLoading, setSourceLoading] = useState(false)
+  const [sourceError, setSourceError] = useState<string | null>(null)
   const filterItems = ['全部', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '失败']
-  const sourceFilterItems = ['全部', '未提交', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '失败', '内容未变化']
+  const sourceFilterItems = ['全部', '未提交', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '已替换', '失败', '内容未变化']
   const loadSourceFiles = useCallback(async () => {
     setSourceLoading(true)
     try {
       const payload = await apiFetch<{ items: SourceFile[] }>('/v1/admin/source-files?limit=500')
       setSourceFiles(payload.items)
-    } catch {
+      setSourceError(null)
+    } catch (caught) {
       setSourceFiles([])
+      setSourceError(caught instanceof Error ? caught.message : '无法读取服务器源文件')
     } finally {
       setSourceLoading(false)
     }
@@ -466,6 +511,7 @@ function FilesPage({ runs, onRunSelected, onRefresh, onOpenSourceDirectory }: { 
         <div><p className="eyebrow">SERVER SOURCE</p><h2>服务器源文件</h2><p>这里读取配置的宿主机 Markdown 目录。文件已经存在，不代表它已经提交、解析或发布，所以未提交文件也会显示。</p></div>
         <Button kind="ghost" renderIcon={Renew} disabled={sourceLoading} onClick={() => void refresh()}>刷新列表</Button>
       </div>
+      {sourceError && <InlineNotification kind="error" lowContrast title="服务器源文件读取失败" subtitle={sourceError} onCloseButtonClick={() => setSourceError(null)} />}
       <div className="files-toolbar">
         <TextInput id="source-files-query" size="sm" labelText="搜索源文件" placeholder="按文件名、路径或院校搜索" value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} decorator={<Search size={16} />} />
         <Dropdown id="source-files-status" size="sm" titleText="源文件状态" label="全部" items={sourceFilterItems} selectedItem={sourceFilter} onChange={({ selectedItem }) => setSourceFilter(selectedItem ?? '全部')} />
@@ -494,7 +540,7 @@ function RegionSection({ label, count, noun, children }: { label: string; count:
 }
 
 function SourceFileTable({ files, onRunSelected, onOpenSourceDirectory }: { files: SourceFile[]; onRunSelected: (id: string) => void; onOpenSourceDirectory: (sourceFile: SourceFile) => void }) {
-  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>源文件</TableHeader><TableHeader>院校映射</TableHeader><TableHeader>地区</TableHeader><TableHeader>源文件状态</TableHeader><TableHeader>最近运行</TableHeader><TableHeader>修改时间</TableHeader><TableHeader>操作</TableHeader></TableRow></TableHead><TableBody>{files.map((file) => <TableRow key={`${file.source_root_id}:${file.relative_path}`} onClick={() => file.run_id && onRunSelected(file.run_id)} className={file.run_id ? 'clickable-row' : undefined}><TableCell><div className="file-cell"><Document size={18} /><div><strong>{file.filename}</strong><span>{file.relative_path}</span><span className="mono">{formatBytes(file.size_bytes)}</span></div></div></TableCell><TableCell><strong>{file.university_name || file.university_id}</strong><span className="subcell mono">{file.university_id}</span>{file.issues[0] && <span className="run-error">{file.issues[0].message}</span>}</TableCell><TableCell><span className="region-cell">{file.region || file.country_code || '未分区'}</span><span className="subcell mono">{file.country_code || '-'}</span></TableCell><TableCell><Tag type={sourceStatusKind(file.source_status)}>{sourceStatusLabel(file.source_status)}</Tag>{file.is_current && <span className="subcell">当前版本</span>}</TableCell><TableCell>{file.run_id ? <><strong className="mono">{file.run_id}</strong><span className="subcell">{file.run_updated_at ? formatTime(file.run_updated_at) : '-'}</span></> : <span className="subcell">尚未提交</span>}</TableCell><TableCell className="mono">{formatTime(file.modified_at)}</TableCell><TableCell>{file.run_id ? <Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(file.run_id as string) }}>在线查看</Button> : <Button kind="tertiary" size="sm" renderIcon={FolderOpen} onClick={(event) => { event.stopPropagation(); onOpenSourceDirectory(file) }}>扫描所在目录</Button>}</TableCell></TableRow>)}</TableBody></Table></div>
+  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>源文件</TableHeader><TableHeader>院校映射</TableHeader><TableHeader>地区</TableHeader><TableHeader>源文件状态</TableHeader><TableHeader>最近运行</TableHeader><TableHeader>修改时间</TableHeader><TableHeader>操作</TableHeader></TableRow></TableHead><TableBody>{files.map((file) => <TableRow key={`${file.source_root_id}:${file.relative_path}`} onClick={() => file.run_id && onRunSelected(file.run_id)} className={file.run_id ? 'clickable-row' : undefined}><TableCell><div className="file-cell"><Document size={18} /><div><strong>{file.filename}</strong><span>{file.relative_path}</span><span className="mono">{formatBytes(file.size_bytes)}</span></div></div></TableCell><TableCell><strong>{file.university_name || file.university_id}</strong><span className="subcell mono">{file.university_id}</span>{file.issues[0] && <span className="run-error">{file.issues[0].message}</span>}</TableCell><TableCell><span className="region-cell">{file.region || file.country_code || '未分区'}</span><span className="subcell mono">{file.country_code || '-'}</span></TableCell><TableCell><Tag type={sourceStatusKind(file.source_status)}>{sourceStatusLabel(file.source_status)}</Tag>{file.is_current && <span className="subcell">当前版本</span>}</TableCell><TableCell>{file.run_id ? <><strong className="mono">{file.run_id}</strong><span className="subcell">{file.run_updated_at ? formatTime(file.run_updated_at) : '-'}</span></> : file.version_id ? <><strong className="mono">{file.version_id}</strong><span className="subcell">版本目录已关联，尚无运行记录</span></> : <span className="subcell">尚未提交</span>}</TableCell><TableCell className="mono">{formatTime(file.modified_at)}</TableCell><TableCell>{file.run_id ? <Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(file.run_id as string) }}>在线查看</Button> : <Button kind="tertiary" size="sm" renderIcon={FolderOpen} onClick={(event) => { event.stopPropagation(); onOpenSourceDirectory(file) }}>扫描所在目录</Button>}</TableCell></TableRow>)}</TableBody></Table></div>
 }
 
 function RunTable({ runs, onRunSelected }: { runs: IngestionRun[]; onRunSelected: (id: string) => void }) {
@@ -518,6 +564,7 @@ function VersionPage({ onRunSelected }: { onRunSelected: (id: string) => void })
   const [stateFilter, setStateFilter] = useState('全部')
   const [regionFilter, setRegionFilter] = useState('全部')
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const stateItems = ['全部', '当前', '已替换', '失败', '暂存']
 
   const loadVersions = useCallback(async () => {
@@ -525,8 +572,10 @@ function VersionPage({ onRunSelected }: { onRunSelected: (id: string) => void })
     try {
       const payload = await apiFetch<{ items: UniversityVersion[] }>('/v1/admin/versions?limit=500')
       setVersions(payload.items)
-    } catch {
+      setLoadError(null)
+    } catch (caught) {
       setVersions([])
+      setLoadError(caught instanceof Error ? caught.message : '无法读取 PostgreSQL 版本目录')
     } finally {
       setLoading(false)
     }
@@ -544,7 +593,22 @@ function VersionPage({ onRunSelected }: { onRunSelected: (id: string) => void })
   })
   const groups = groupByRegion(filtered)
 
-  return <div className="versions-page"><section className="workbench-section version-catalog-section"><div className="section-title-row"><div><p className="eyebrow">POSTGRESQL CATALOG</p><h2>版本历史</h2><p>直接读取 PostgreSQL 的 school_versions。这里不依赖文件是否已经提交，也不要求先打开某个运行记录。</p></div><Button kind="ghost" renderIcon={Renew} disabled={loading} onClick={() => void loadVersions()}>刷新列表</Button></div><div className="files-toolbar"><TextInput id="versions-query" size="sm" labelText="搜索版本" placeholder="按院校、版本号或文件名搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} /><Dropdown id="versions-state" size="sm" titleText="版本状态" label="全部" items={stateItems} selectedItem={stateFilter} onChange={({ selectedItem }) => setStateFilter(selectedItem ?? '全部')} /><Dropdown id="versions-region" size="sm" titleText="地区" label="全部" items={regionItems} selectedItem={regionFilter} onChange={({ selectedItem }) => setRegionFilter(selectedItem ?? '全部')} /><span className="mono files-count">显示 {filtered.length} / {versions.length}</span></div>{groups.length ? groups.map((group) => <RegionSection key={group.key} label={group.label} count={group.items.length} noun="个版本"><VersionCatalogTable versions={group.items} onRunSelected={onRunSelected} /></RegionSection>) : <EmptyState title={loading ? '正在读取 PostgreSQL 版本' : '没有版本记录'} body={versions.length ? '换一个院校、版本号、地区或状态筛选条件。' : '如果数据库中有版本，请检查 Fast Router 是否连接到了同一个 PostgreSQL 实例。'} />}</section></div>
+  return <div className="versions-page">
+    <section className="workbench-section version-catalog-section">
+      <div className="section-title-row">
+        <div><p className="eyebrow">POSTGRESQL CATALOG</p><h2>版本历史</h2><p>直接读取 PostgreSQL 的 school_versions。这里不依赖文件是否已经提交，也不要求先打开某个运行记录。</p></div>
+        <Button kind="ghost" renderIcon={Renew} disabled={loading} onClick={() => void loadVersions()}>刷新列表</Button>
+      </div>
+      {loadError && <InlineNotification kind="error" lowContrast title="版本目录读取失败" subtitle={loadError} onCloseButtonClick={() => setLoadError(null)} />}
+      <div className="files-toolbar">
+        <TextInput id="versions-query" size="sm" labelText="搜索版本" placeholder="按院校、版本号或文件名搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} />
+        <Dropdown id="versions-state" size="sm" titleText="版本状态" label="全部" items={stateItems} selectedItem={stateFilter} onChange={({ selectedItem }) => setStateFilter(selectedItem ?? '全部')} />
+        <Dropdown id="versions-region" size="sm" titleText="地区" label="全部" items={regionItems} selectedItem={regionFilter} onChange={({ selectedItem }) => setRegionFilter(selectedItem ?? '全部')} />
+        <span className="mono files-count">显示 {filtered.length} / {versions.length}</span>
+      </div>
+      {groups.length ? groups.map((group) => <RegionSection key={group.key} label={group.label} count={group.items.length} noun="个版本"><VersionCatalogTable versions={group.items} onRunSelected={onRunSelected} /></RegionSection>) : <EmptyState title={loading ? '正在读取 PostgreSQL 版本' : '没有版本记录'} body={versions.length ? '换一个院校、版本号、地区或状态筛选条件。' : loadError ? '接口返回了错误，请先处理上方提示后再刷新。' : '如果数据库中有版本，请检查 Fast Router 是否连接到了同一个 PostgreSQL 实例。'} />}
+    </section>
+  </div>
 }
 
 function VersionCatalogTable({ versions, onRunSelected }: { versions: UniversityVersion[]; onRunSelected: (id: string) => void }) {
@@ -642,7 +706,11 @@ function DocsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => { void apiFetch<{ items: Guide[] }>('/v1/admin/schema-catalog').then((payload) => { setGuides(payload.items); setSelected(payload.items[0]?.entity ?? null) }).catch(() => undefined) }, [])
   const current = guides.find((guide) => guide.entity === selected) ?? guides[0]
-  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何按问题调用</h2><p>拆分是职责分工，不是每个问题都要把五份文件全部检索一遍。先识别问题类型，再只打开能回答它的记录。</p></div></div><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>它在检索里的位置</h3><p>{current.role ?? '按职责读取的结构化数据。'}</p><p className="query-rule">{current.query_rule ?? '按问题意图决定是否读取。'}</p></div><div><h3>为什么要拆开</h3><p>{current.why}</p><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div>{(current.entity === 'source_registry' || current.entity === 'url_manifest') && <div className="source-model-note"><strong>MIT 里的实际关系</strong><p>课程页、费用页和索引页的 URL 本身就是来源。MIT 当前两份产物逐条对应同一个 URL，发布到 PostgreSQL 时会折叠到同一张 source_registry 表。url_manifest 只是为了兼容现有产物和 URL 级关联的投影，不需要人工再维护一套官网来源。</p></div>}<h3>最小结构</h3><p className="section-note">下面是以 MIT 为例的最小必需结构。代码块使用 JSONC 注释，方便直接理解每个字段的作用。</p><CopyExample text={MINIMUM_EXAMPLES[current.entity] ?? '{}'} /><h3>字段说明</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>字段描述</TableHeader><TableHeader>MIT 示例</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).map(([field, property]) => { const note = getFieldNote(current.entity, field); return <TableRow key={field}><TableCell className="mono">{field}{current.schema.required?.includes(field) && <span className="required-mark">必填</span>}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || (property.enum ? 'enum' : 'object')}</TableCell><TableCell className="field-description">{note.description}{property.enum?.length ? <span className="field-constraint">可选值：{property.enum.join(', ')}</span> : null}</TableCell><TableCell><code className="field-example">{note.example}</code></TableCell></TableRow> })}</TableBody></Table></div></div>}</div><RetrievalGuide /></section>
+  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何按问题调用</h2><p>拆分是职责分工，不是每个问题都要把五份文件全部检索一遍。先识别问题类型，再只打开能回答它的记录。</p></div></div><SchemaOverview /><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>它在检索里的位置</h3><p>{current.role ?? '按职责读取的结构化数据。'}</p><p className="query-rule">{current.query_rule ?? '按问题意图决定是否读取。'}</p></div><div><h3>为什么要拆开</h3><p>{current.why}</p><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div>{(current.entity === 'source_registry' || current.entity === 'url_manifest') && <div className="source-model-note"><strong>MIT 里的实际关系</strong><p>课程页、费用页和索引页的 URL 本身就是来源。MIT 当前两份产物逐条对应同一个 URL，发布到 PostgreSQL 时会折叠到同一张 source_registry 表。url_manifest 只是为了兼容现有产物和 URL 级关联的投影，不需要人工再维护一套官网来源。</p></div>}<h3>最小结构</h3><p className="section-note">下面是以 MIT 为例的最小必需结构。代码块使用 JSONC 注释，方便直接理解每个字段的作用。</p><CopyExample text={MINIMUM_EXAMPLES[current.entity] ?? '{}'} /><h3>字段说明</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>字段描述</TableHeader><TableHeader>MIT 示例</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).map(([field, property]) => { const note = getFieldNote(current.entity, field); return <TableRow key={field}><TableCell className="mono">{field}{current.schema.required?.includes(field) && <span className="required-mark">必填</span>}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || (property.enum ? 'enum' : 'object')}</TableCell><TableCell className="field-description">{note.description}{property.enum?.length ? <span className="field-constraint">可选值：{property.enum.join(', ')}</span> : null}</TableCell><TableCell><code className="field-example">{note.example}</code></TableCell></TableRow> })}</TableBody></Table></div></div>}</div><RetrievalGuide /></section>
+}
+
+function SchemaOverview() {
+  return <section className="schema-overview" aria-labelledby="schema-overview-heading"><div className="schema-overview-heading"><p className="eyebrow">WHY THIS MODEL</p><h2 id="schema-overview-heading">{SCHEMA_OVERVIEW.heading}</h2><p>{SCHEMA_OVERVIEW.lead}</p></div><div className="schema-overview-intro"><div><h3>为什么不合并成一份 JSONL</h3><p>{SCHEMA_OVERVIEW.whyNotSingle}</p></div><div className="schema-overview-reasons">{SCHEMA_OVERVIEW.reasons.map((reason) => <div key={reason.title}><strong>{reason.title}</strong><p>{reason.detail}</p></div>)}</div></div><div className="schema-model-table"><table><caption>五类 JSONL 的记录粒度和必要性</caption><thead><tr><th scope="col">JSONL</th><th scope="col">一行代表什么</th><th scope="col">主要回答什么</th><th scope="col">为什么需要独立</th></tr></thead><tbody>{SCHEMA_OVERVIEW.models.map((model) => <tr key={model.entity}><th scope="row"><code>{model.entity}</code></th><td>{model.grain}</td><td>{model.questions}</td><td>{model.necessity}</td></tr>)}</tbody></table></div><div className="schema-route"><div className="schema-route-heading"><h3>MIT 示例：一个问题不会读取全部五类文件</h3><p>问题是“mit 里有哪些计算机相关的学科”。实际只沿着能产生答案的路径前进。</p></div><div className="schema-route-steps">{SCHEMA_OVERVIEW.mitRoute.map((step, index) => <div className={`schema-route-step ${index === SCHEMA_OVERVIEW.mitRoute.length - 1 ? 'is-skipped' : ''}`} key={step.label}><span>{step.label}</span><strong>{step.detail}</strong>{index < SCHEMA_OVERVIEW.mitRoute.length - 1 && <ArrowRight size={16} aria-hidden="true" />}</div>)}</div></div><div className="source-model-note schema-overview-source-note"><strong>source_registry 和 url_manifest 的关系</strong><p>{SCHEMA_OVERVIEW.sourceNote}</p></div></section>
 }
 
 function RetrievalGuide() {

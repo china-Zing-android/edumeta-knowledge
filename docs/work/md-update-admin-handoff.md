@@ -51,6 +51,7 @@ Implement an internal React and FastAPI control plane for Markdown ingestion, qu
 - Source discovery now falls back from exact `source_relative_path` matching to the newest university run for legacy imports created before source-path fields existed.
 - Added `GET /v1/admin/versions` and a top-level `版本历史` page that reads `school_versions` directly, including versions that have no linked run or source filename.
 - Reframed `source_registry` as the URL/source master record and `url_manifest` as a compatibility association projection. The UI now explains that the MIT URL rows are one-to-one and PostgreSQL folds the projection into `source_registry`; the retrieval guide shows query and skip paths instead of implying all five JSONL files are queried together.
+- Added a JSONL overview before the field-level docs. It explains why the model is split by record grain, query intent, change lifecycle, and evidence relationships; compares the five artifacts; and walks the MIT question through the necessary path while explicitly skipping unrelated files.
 - Compose wiring exposes Fast Router and the admin UI on loopback plus the configured Tailscale host.
 
 ## UI follow-up delivered
@@ -61,8 +62,11 @@ Implement an internal React and FastAPI control plane for Markdown ingestion, qu
 - Reworked `运行批次` into a list with file, accepted, published, failed, WeKnora-disabled, status, and update-time columns.
 - `已上传文件` now groups both server source files and submitted runs by country plus region, with a region filter for each list. Missing regions fall back to `country · 未细分地区` or `未分区` and remain visible.
 - Source metadata now reads Markdown metadata declarations and falls back to existing university metadata when `manifest.jsonl` has no region. Run status responses include university name, country code, and region for consistent grouping.
+- Source discovery now also falls back to the authoritative `school_versions` catalog when a historical import has no linked `ingestion_runs` row. Such files no longer appear as `未提交`; the response includes the associated version and current-state marker.
 - Online artifact inspection now announces raw/JSONL viewing, loads 80 lines or records per page, and exposes previous/next pagination alongside download links.
 - JSONL documentation now renders all schema fields with required markers, type, description, MIT examples, a copyable annotated JSONC minimum structure, and a retrieval flow for “mit里有哪些计算机相关的学科”.
+- Source-file and version-catalog API errors now stay visible in the relevant page instead of being silently rendered as an empty list.
+- Added a Carbon `返回顶部` floating action. It is rendered only after the document is taller than the viewport and the operator has left the top sentinel, uses `IntersectionObserver` rather than a scroll handler, and respects reduced-motion preferences.
 
 ## UI verification
 
@@ -71,15 +75,17 @@ Implement an internal React and FastAPI control plane for Markdown ingestion, qu
 - Region inference tests, `tests.test_admin_control_plane`, and `tests.test_fast_router_api` passed after the region grouping change.
 - `python3 -m compileall` passed for the updated admin and ingestion modules.
 - `tests/test_admin_control_plane.py`: source files are returned as `not_submitted` before an ingestion run exists.
+- `tests/test_admin_control_plane.py`: source files associate with a current `school_versions` row even when no ingestion run exists.
 - `tests/test_fast_router_api.py`: `/v1/admin/source-files` contract passed.
 - Legacy-run source association and global version-catalog API tests passed.
 - `docker compose -f infra/docker-compose.yml -f compose.server.yaml config --quiet` passed; the rendered server config mounts `/app/data/raw-md` and sets `INGESTION_SOURCE_PARENT=/app/data/raw-md`.
 - Full Python discovery was attempted: 238 tests ran, with the existing parser test ordering failure and sandbox loopback permission errors; focused admin/API tests and Python compilation passed.
 - `git diff --check` passed.
+- `apps/md-admin`: the JSONL model overview was added; `npm run typecheck` and `npm run build` passed after the change.
 
 ## Remaining risks
 
-- The directory/version-history changes are currently uncommitted local worktree changes; `HEAD` and `origin/main` are still `2157d1d`, so a deployed server will not show them until the changes are committed, pushed, and the Fast Router/admin images are rebuilt.
+- The source/version visibility follow-up and floating action are currently uncommitted local worktree changes; the deployed server will not show them until these changes are committed, pushed, and the Fast Router/admin images are rebuilt.
 - Admin endpoint/database integration tests and an end-to-end browser test were not run because no live PostgreSQL/OpenSearch stack or browser runner was started; static checks, focused control-plane tests, full Python tests, Compose validation, and production frontend build passed.
 - The new navigation, file list, artifact pagination, and documentation flow still need a browser pass against the live server after the rebuilt `md-admin` image is deployed.
 - The source-file list scans configured roots on demand and defaults to metadata-only hashes for performance. `include_hash=true` enables SHA-256 when an operator needs it.

@@ -390,6 +390,61 @@ class AdminControlPlane:
             for row in rows
         }
 
+    def _latest_university_versions(self) -> dict[str, dict[str, Any]]:
+        """Return the authoritative version when no ingestion run is linked.
+
+        Some older catalog loads persisted ``school_versions`` without an
+        ``ingestion_runs`` row that contains source metadata. The version table
+        is still authoritative for publication state, so source discovery must
+        not label those Markdown files as ``not_submitted`` merely because the
+        run-side association is missing.
+        """
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (v.university_id)
+                       v.university_id, v.version_id, v.dataset_version,
+                       v.publication_state, v.created_at, v.published_at,
+                       v.superseded_at, u.university_name
+                  FROM school_versions AS v
+                  LEFT JOIN universities AS u
+                    ON u.university_id = v.university_id
+                 ORDER BY v.university_id,
+                          CASE v.publication_state
+                            WHEN 'current' THEN 0
+                            WHEN 'staging' THEN 1
+                            WHEN 'failed' THEN 2
+                            ELSE 3
+                          END,
+                          v.created_at DESC, v.version_id DESC
+                """
+            )
+            rows = cursor.fetchall()
+        return {
+            str(row[0]): {
+                "university_id": row[0],
+                "version_id": row[1],
+                "dataset_version": row[2],
+                "publication_state": row[3],
+                "created_at": row[4].isoformat() if row[4] else None,
+                "published_at": row[5].isoformat() if row[5] else None,
+                "superseded_at": row[6].isoformat() if row[6] else None,
+                "university_name": row[7],
+            }
+            for row in rows
+        }
+
+    @staticmethod
+    def _source_status_from_version(version: dict[str, Any] | None) -> str:
+        if not version:
+            return "not_submitted"
+        return {
+            "current": "published",
+            "staging": "accepted",
+            "failed": "failed",
+            "superseded": "superseded",
+        }.get(str(version.get("publication_state")), "not_submitted")
+
     def source_files(
         self,
         *,
@@ -415,6 +470,7 @@ class AdminControlPlane:
         needle = (query or "").strip().lower()
         requested_status = (status or "").strip().lower()
         collected: list[dict[str, Any]] = []
+        latest_university_versions = self._latest_university_versions()
 
         for root_id in root_ids:
             root = self._root(root_id)
@@ -439,7 +495,8 @@ class AdminControlPlane:
                     compute_hash=include_hash,
                 )
                 run = latest_runs.get(relative) or latest_university_runs.get(item["university_id"])
-                source_status = run["status"] if run else "not_submitted"
+                version = latest_university_versions.get(item["university_id"])
+                source_status = run["status"] if run else self._source_status_from_version(version)
                 searchable = " ".join(
                     str(value or "")
                     for value in (item["filename"], item["relative_path"], item["university_id"], item["university_name"])
@@ -471,7 +528,15 @@ class AdminControlPlane:
                     "run_operation": run["operation"] if run else None,
                     "run_version_id": run["version_id"] if run else None,
                     "run_updated_at": run["updated_at"] if run else None,
-                    "is_current": run["is_current"] if run else False,
+                    "version_id": run["version_id"] if run else (version["version_id"] if version else None),
+                    "dataset_version": version["dataset_version"] if version else None,
+                    "version_state": version["publication_state"] if version else None,
+                    "version_updated_at": (
+                        version["published_at"] or version["created_at"]
+                        if version
+                        else None
+                    ),
+                    "is_current": run["is_current"] if run else bool(version and version["publication_state"] == "current"),
                 })
 
         collected.sort(key=lambda item: (str(item["source_root_id"]), str(item["relative_path"])))

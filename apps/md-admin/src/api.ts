@@ -147,6 +147,10 @@ export type SourceFile = {
   run_operation: string | null
   run_version_id: string | null
   run_updated_at: string | null
+  version_id: string | null
+  dataset_version: string | null
+  version_state: string | null
+  version_updated_at: string | null
   is_current: boolean
 }
 

@@ -177,11 +177,38 @@ class AdminControlPlaneTests(unittest.TestCase):
             source.write_text("# Massachusetts Institute of Technology\n", encoding="utf-8")
             self.control.roots = {"universities": root}
             self.control._connect = lambda: _LegacyRunConnection()
+            self.control._latest_university_versions = lambda: {}
 
             payload = self.control.source_files()
 
         self.assertEqual(payload["items"][0]["run_id"], "ing_legacy_mit")
         self.assertEqual(payload["items"][0]["source_status"], "published")
+
+    def test_source_file_links_to_school_version_without_ingestion_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "us" / "MIT.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Massachusetts Institute of Technology\n", encoding="utf-8")
+            self.control.roots = {"universities": root}
+            self.control._latest_university_runs = lambda: {}
+            self.control._latest_university_versions = lambda: {
+                "mit": {
+                    "version_id": "ver_mit_catalog",
+                    "dataset_version": "mit_20260704_v2",
+                    "publication_state": "current",
+                    "created_at": "2026-07-04T00:00:00+00:00",
+                    "published_at": "2026-07-04T00:00:00+00:00",
+                }
+            }
+
+            payload = self.control.source_files()
+
+        item = payload["items"][0]
+        self.assertEqual(item["source_status"], "published")
+        self.assertEqual(item["version_id"], "ver_mit_catalog")
+        self.assertTrue(item["is_current"])
+        self.assertIsNone(item["run_id"])
 
     def test_global_version_listing_returns_versions_without_opening_a_run(self) -> None:
         self.control._connect = lambda: _VersionConnection()

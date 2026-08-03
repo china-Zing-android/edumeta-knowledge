@@ -226,6 +226,75 @@ export const MINIMUM_EXAMPLES: Record<string, string> = {
 }`,
 }
 
+export type SchemaOverviewModel = {
+  entity: string
+  grain: string
+  questions: string
+  necessity: string
+}
+
+export type SchemaOverviewReason = {
+  title: string
+  detail: string
+}
+
+export type SchemaOverviewRouteStep = {
+  label: string
+  detail: string
+}
+
+export const SCHEMA_OVERVIEW = {
+  heading: '先理解为什么要拆成五类',
+  lead: '这不是按文件名随意拆分，而是按数据对象、问题类型和变更周期拆分。拆分后，每个问题只走必要的检索路径。',
+  whyNotSingle: '如果把专业、截止日期、官网 URL 和院校摘要放进同一份 JSONL，记录粒度不同会造成大量空字段和重复来源。回答一个专业问题时还会带入学费和截止日期噪声，更新一条截止日期也可能让整批专业记录看起来都发生变化。',
+  reasons: [
+    { title: '记录粒度不同', detail: '专业、单条事实、官方 URL、关联关系和院校摘要不是同一种记录，各自需要不同的主键和字段。' },
+    { title: '问题类型不同', detail: '“有哪些专业”和“申请截止日期是什么”需要不同的检索入口。拆开后可以按问题意图精准路由，不必读取无关数据。' },
+    { title: '更新和回滚不同', detail: '专业目录、招生事实、URL 状态和院校摘要的变化周期不同。拆开后可以独立比较、审核、发布和回滚。' },
+    { title: '证据关系清晰', detail: '专业和事实通过 source_id 指向官方来源，URL 关联通过 entry_ids 指向专业，答案可以同时返回内容和证据。' },
+  ] satisfies SchemaOverviewReason[],
+  models: [
+    {
+      entity: 'catalog_entries',
+      grain: '一行 = 一个专业或学位项目',
+      questions: 'MIT 有哪些计算机相关专业？属于哪个学院？是什么学位？',
+      necessity: '保存专业检索的主体记录，让专业名称、院系、层级和学科可以独立筛选和做版本差异。',
+    },
+    {
+      entity: 'quick_facts',
+      grain: '一行 = 一条带范围和时间的事实',
+      questions: '学费、申请费、截止日期、语言要求和资助政策是什么？',
+      necessity: '把数字和规则从专业目录中分离出来，便于按事实类型校验、追踪冲突和更新。',
+    },
+    {
+      entity: 'source_registry',
+      grain: '一行 = 一个归一化官方 URL 的主记录',
+      questions: '答案来自哪个官网页面？URL 是否有效？WeKnora 是否导入成功？',
+      necessity: '统一管理 URL 的稳定 ID、官方性、生命周期、解析状态和导入状态。它不是额外的官网页面。',
+    },
+    {
+      entity: 'url_manifest',
+      grain: '一行 = URL 与专业、主题或 WeKnora 文档的关联投影',
+      questions: '这个课程页 URL 覆盖哪些专业或主题？对应哪个远程文档？',
+      necessity: '为 URL 反查和旧脚本提供快捷关联。MIT 当前它与 source_registry 通常是一对一，普通维护不需要同时修改两份。',
+    },
+    {
+      entity: 'entity_contexts',
+      grain: '一行 = 一个院校或专业的概览上下文',
+      questions: 'MIT 有哪些学院？还能继续查询哪些主题？',
+      necessity: '提供范围定位、摘要和导航，不把同一份院校概览重复复制到每条专业记录中。',
+    },
+  ] satisfies SchemaOverviewModel[],
+  mitRoute: [
+    { label: '问题进入', detail: 'mit 里有哪些计算机相关的学科' },
+    { label: '先定范围', detail: 'entity_contexts 只有在不知道 MIT 的可查范围时才使用，已知范围时可以跳过。' },
+    { label: '查主体', detail: 'catalog_entries 按 university_id=mit 和计算机学科标签筛选专业记录。' },
+    { label: '补证据', detail: '沿 catalog_entries.source_id 查询 source_registry，补上官方 URL。' },
+    { label: '明确跳过', detail: 'quick_facts 与 url_manifest 不回答本题的核心问题，不需要加载。' },
+  ] satisfies SchemaOverviewRouteStep[],
+  sourceNote: '课程页、费用页和索引页的 URL 本身就是来源。source_registry 是 URL 的主记录；url_manifest 只是 URL 与专业、主题和 WeKnora 文档的关联投影。若没有 URL 反查或旧脚本兼容需求，它可以由系统自动生成，而不是让维护人员手工维护第二份来源数据。',
+}
+
 export type RetrievalFlowStep = {
   label: string
   title: string
