@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fast_router.admin import AdminControlPlane, MAX_UPLOAD_FILES
@@ -18,6 +19,9 @@ class _Cursor:
     def execute(self, *_args):
         return None
 
+    def fetchall(self):
+        return []
+
 
 class _Connection:
     def __enter__(self):
@@ -31,6 +35,58 @@ class _Connection:
 
     def cursor(self):
         return _Cursor()
+
+
+class _LegacyRunCursor(_Cursor):
+    def fetchall(self):
+        return [
+            (
+                "mit",
+                "ing_legacy_mit",
+                "mit",
+                "update",
+                "published",
+                "ver_mit_legacy",
+                datetime.now(timezone.utc),
+                True,
+                "Massachusetts Institute of Technology",
+            )
+        ]
+
+
+class _LegacyRunConnection(_Connection):
+    def cursor(self):
+        return _LegacyRunCursor()
+
+
+class _VersionCursor(_Cursor):
+    def fetchall(self):
+        return [
+            (
+                "ver_mit_legacy",
+                "mit_20260704_v2",
+                "current",
+                "input-hash",
+                {"catalog_entries": 157},
+                datetime.now(timezone.utc),
+                datetime.now(timezone.utc),
+                None,
+                "ing_legacy_mit",
+                "published",
+                None,
+                None,
+                None,
+                "Massachusetts Institute of Technology",
+                "US",
+                "Massachusetts",
+                "mit",
+            )
+        ]
+
+
+class _VersionConnection(_Connection):
+    def cursor(self):
+        return _VersionCursor()
 
 
 class _Service:
@@ -76,6 +132,80 @@ class AdminControlPlaneTests(unittest.TestCase):
 
         self.assertEqual(item["size_bytes"], MAX_MD_FILE_BYTES)
         self.assertTrue(item["ready"])
+
+    def test_source_metadata_infers_region_from_markdown_when_manifest_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "uk" / "Cambridge.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "# University of Cambridge\n\ncountry: UK\nregion: England\n",
+                encoding="utf-8",
+            )
+            item = self.control._make_item(
+                path,
+                root=root,
+                root_id="universities",
+                manifest={"university_id": "cambridge", "country_code": "UK", "region": None},
+                existing={},
+            )
+
+        self.assertEqual(item["country_code"], "UK")
+        self.assertEqual(item["region"], "England")
+
+    def test_source_metadata_uses_existing_university_region_as_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "us" / "MIT.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("# Massachusetts Institute of Technology\n", encoding="utf-8")
+            item = self.control._make_item(
+                path,
+                root=root,
+                root_id="universities",
+                manifest={"university_id": "mit", "country_code": "US", "region": None},
+                existing={"mit": {"country_code": "US", "region": "Massachusetts"}},
+            )
+
+        self.assertEqual(item["region"], "Massachusetts")
+
+    def test_source_file_links_to_legacy_run_without_source_relative_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "us" / "MIT.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Massachusetts Institute of Technology\n", encoding="utf-8")
+            self.control.roots = {"universities": root}
+            self.control._connect = lambda: _LegacyRunConnection()
+
+            payload = self.control.source_files()
+
+        self.assertEqual(payload["items"][0]["run_id"], "ing_legacy_mit")
+        self.assertEqual(payload["items"][0]["source_status"], "published")
+
+    def test_global_version_listing_returns_versions_without_opening_a_run(self) -> None:
+        self.control._connect = lambda: _VersionConnection()
+
+        payload = self.control.list_versions()
+
+        self.assertEqual(payload["total_count"], 1)
+        self.assertEqual(payload["items"][0]["version_id"], "ver_mit_legacy")
+        self.assertEqual(payload["items"][0]["region"], "Massachusetts")
+
+    def test_server_source_files_are_visible_before_they_create_a_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "us" / "mit.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Massachusetts Institute of Technology\n", encoding="utf-8")
+            self.control.roots = {"universities": root}
+
+            payload = self.control.source_files()
+
+        self.assertEqual(payload["total_count"], 1)
+        self.assertEqual(payload["items"][0]["relative_path"], "us/mit.md")
+        self.assertEqual(payload["items"][0]["source_status"], "not_submitted")
+        self.assertIsNone(payload["items"][0]["run_id"])
 
 
 if __name__ == "__main__":

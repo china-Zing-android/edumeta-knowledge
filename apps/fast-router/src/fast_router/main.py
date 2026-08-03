@@ -250,6 +250,30 @@ def admin_source_roots() -> dict[str, Any]:
     return {"items": _require_admin().source_roots()}
 
 
+@app.get("/v1/admin/source-files")
+def admin_source_files(
+    source_root_id: str | None = Query(None),
+    source_relative_path: str | None = Query(None),
+    query: str | None = Query(None, max_length=200),
+    status: str | None = Query(None, max_length=40),
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    include_hash: bool = Query(False),
+) -> dict[str, Any]:
+    try:
+        return _require_admin().source_files(
+            source_root_id=source_root_id,
+            source_relative_path=source_relative_path,
+            query=query,
+            status=status,
+            limit=limit,
+            offset=offset,
+            include_hash=include_hash,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/v1/admin/ingestion-previews", status_code=200)
 async def create_admin_preview(
     mode: Literal["upload", "directory"] = Form("upload"),
@@ -362,6 +386,21 @@ def force_publish_admin_run(run_id: str, payload: AdminReasonRequest) -> dict[st
 @app.get("/v1/admin/universities/{university_id}/versions")
 def list_admin_versions(university_id: str) -> dict[str, Any]:
     return _require_admin().versions(university_id)
+
+
+@app.get("/v1/admin/versions")
+def list_admin_version_catalog(
+    query: str | None = Query(None, max_length=200),
+    publication_state: str | None = Query(None, max_length=40),
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    return _require_admin().list_versions(
+        query=query,
+        publication_state=publication_state,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.post("/v1/admin/universities/{university_id}/rollback")

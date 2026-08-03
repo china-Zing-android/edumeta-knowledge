@@ -60,7 +60,7 @@ const fieldNotes: Record<string, Record<string, FieldNote>> = {
     conflict_status: { description: '同一事实是否存在冲突，以及冲突是否已解决。', example: '"none"' },
   },
   source_registry: {
-    source_id: { description: '官网来源的稳定主键，是来源生命周期和导入状态的入口。', example: '"src_mit_catalog_mit_edu_degree_charts_computer_science"' },
+    source_id: { description: '官方 URL 在来源主登记中的稳定主键，是来源生命周期和导入状态的入口。', example: '"src_mit_catalog_mit_edu_degree_charts_computer_science"' },
     url_type: { description: '来源的业务类型，例如 catalog、curriculum、deadline 或 funding。', example: '"degree_chart"' },
     weknora_content_hash: { description: '最近一次成功导入 WeKnora 的内容哈希。', example: '"37f23be845f9129a74e12ab46c0a7ef7"' },
     weknora_import_job_id: { description: '对应的 WeKnora 导入任务 ID。', example: '"wkj_mit_catalog_001"' },
@@ -69,8 +69,8 @@ const fieldNotes: Record<string, Record<string, FieldNote>> = {
     weknora_import_status: { description: '该来源的 WeKnora 导入状态，不影响 L1 是否发布。', example: '"success"' },
   },
   url_manifest: {
-    url_id: { description: 'URL 关联清单记录的稳定主键。', example: '"url_src_mit_catalog_mit_edu_degree_charts_computer_science"' },
-    url_type: { description: 'URL 主要回答的问题类型，例如 degree_chart、deadline 或 tuition_fee。', example: '"degree_chart"' },
+    url_id: { description: '兼容投影记录的稳定主键。它不是第二个官网来源主键。', example: '"url_src_mit_catalog_mit_edu_degree_charts_computer_science"' },
+    url_type: { description: 'URL 主要回答的问题类型，例如 degree_chart、deadline 或 tuition_fee。通常与 source_registry.url_type 对齐。', example: '"degree_chart"' },
     weknora_collection_id: { description: 'WeKnora 中的集合或知识库标识。', example: '"1b91fcff-ce72-4e97-9de0-f23a8ba419d9"' },
     weknora_knowledge_id: { description: 'WeKnora 中对应知识条目的标识。', example: '"43d1e972-cda3-480f-9df4-1bae4c9570ff"' },
     weknora_document_id: { description: 'WeKnora 中对应远程文档的标识。', example: '"43d1e972-cda3-480f-9df4-1bae4c9570ff"' },
@@ -233,18 +233,23 @@ export type RetrievalFlowStep = {
 }
 
 export const RETRIEVAL_FLOW: RetrievalFlowStep[] = [
-  { label: '问题进入', title: 'MIT 里有哪些计算机相关的学科', detail: '识别院校实体 MIT，提取主题 Computer Science，并判断用户要的是专业目录而不是截止日期或学费。' },
-  { label: '实体定位', title: 'entity_contexts', detail: '确认 mit 对应的学校上下文、可用主题和下属学院，给后续检索提供边界。' },
-  { label: '专业检索', title: 'catalog_entries', detail: '按 university_id=mit 和 discipline_ids / discipline_labels 过滤，返回 Computer Science、Mathematics with Computer Science 等专业记录。' },
-  { label: '来源绑定', title: 'source_registry + url_manifest', detail: '把专业记录绑定到官方来源，确定哪些 URL 能支撑答案，并保留精确证据入口。' },
-  { label: '事实补充', title: 'quick_facts', detail: '本问题不需要事实表；如果继续问申请截止日期、学费或语言要求，才沿同一院校边界查询 quick_facts。' },
-  { label: '回答生成', title: '专业清单 + 证据', detail: '合并去重后的专业名称、学院和学位层级，附官方来源，不把 unrelated 的事实混入答案。' },
+  { label: '问题进入', title: 'MIT 里有哪些计算机相关的学科', detail: '识别院校是 MIT，主题是 Computer Science，意图是查专业目录。' },
+  { label: '先定范围', title: 'entity_contexts（按需）', detail: '如果还不知道 MIT 有哪些学院或可查主题，就先用上下文定位；已知范围时可以直接跳过。' },
+  { label: '只查主体', title: 'catalog_entries', detail: '按 university_id=mit 和 discipline_ids / discipline_labels 筛选专业记录，返回专业名、学院和学位层级。' },
+  { label: '补证据', title: 'source_registry', detail: '需要展示官方出处时，沿 catalog_entries.source_id 取来源主记录和 canonical_url。' },
+  { label: '得到回答', title: '专业清单 + 官方出处', detail: '返回与计算机相关的专业，不读取与本问题无关的学费、截止日期和资助事实。' },
 ]
 
 export const RETRIEVAL_ROLES = [
-  { entity: 'entity_contexts', role: '先定位院校和可查主题', questions: '这是谁？有哪些学院？还能继续问课程、截止日期还是资助？' },
+  { entity: 'entity_contexts', role: '发现和范围定位', questions: '这是哪所学校？有哪些学院？还能继续问哪些主题？已知范围时可以跳过。' },
   { entity: 'catalog_entries', role: '回答专业、学科和学位目录', questions: '有哪些计算机相关专业？属于哪个学院？是本科还是研究生？' },
-  { entity: 'source_registry', role: '确认来源权威性和生命周期', questions: '这条答案来自哪个官方页面？来源是否解析成功、是否仍有效？' },
-  { entity: 'url_manifest', role: '做 URL 到专业和主题的精准映射', questions: '哪个 URL 支撑这个专业？一个来源覆盖哪些专业或主题？' },
-  { entity: 'quick_facts', role: '回答明确的数值和规则事实', questions: '截止日期、学费、申请费、语言要求和资助政策是什么？' },
+  { entity: 'source_registry', role: '提供 URL 主来源和生命周期', questions: '这条答案来自哪个官方页面？URL 是否有效、解析成功、已导入？' },
+  { entity: 'url_manifest', role: '提供 URL 到记录的兼容关联投影', questions: '某个 URL 覆盖哪些专业或主题？需要 URL 级 WeKnora 文档 ID 时才使用。' },
+  { entity: 'quick_facts', role: '回答明确的数值和规则事实', questions: '截止日期、学费、申请费、语言要求和资助政策是什么？只有这类问题才查询。' },
+]
+
+export const RETRIEVAL_DECISIONS = [
+  { question: 'mit 里有哪些计算机相关的学科', use: 'entity_contexts（必要时）→ catalog_entries → source_registry', skip: 'quick_facts；url_manifest 通常不需要单独读取', reason: '这是专业目录问题，核心答案只来自 catalog_entries。' },
+  { question: 'MIT 本科申请截止日期和学费是多少', use: 'entity_contexts（必要时）→ quick_facts → source_registry', skip: 'catalog_entries；url_manifest 通常不需要单独读取', reason: '这是事实问题，不需要把所有专业记录载入检索。' },
+  { question: '这个课程页 URL 覆盖哪些专业', use: 'url_manifest（关联投影）→ catalog_entries', skip: 'quick_facts', reason: '问题从 URL 反查关联专业，才需要 URL 级关联投影。' },
 ]

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   ArrowRight,
@@ -13,6 +13,7 @@ import {
   Renew,
   Search,
   Settings,
+  Time,
   Undo,
 } from '@carbon/icons-react'
 import {
@@ -44,19 +45,21 @@ import {
   IngestionRun,
   Preview,
   PreviewItem,
+  SourceFile,
   UniversityVersion,
 } from './api'
-import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_FLOW, RETRIEVAL_ROLES } from './schemaDocs'
+import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_DECISIONS, RETRIEVAL_FLOW, RETRIEVAL_ROLES } from './schemaDocs'
 import './styles.css'
 
-type Page = 'workspace' | 'files' | 'batches' | 'docs' | 'settings'
+type Page = 'workspace' | 'files' | 'batches' | 'versions' | 'docs' | 'settings'
 type ArtifactPage = { artifact: string; offset: number; limit: number; total: number; items: Array<Record<string, unknown>> }
-type Guide = { entity: string; label: string; purpose: string; why: string; minimum: string[]; links: string[]; schema: { required?: string[]; properties?: Record<string, { type?: string | string[]; enum?: string[] }> } }
+type Guide = { entity: string; label: string; purpose: string; why: string; role?: string; query_rule?: string; minimum: string[]; links: string[]; schema: { required?: string[]; properties?: Record<string, { type?: string | string[]; enum?: string[] }> } }
 
 const NAV_ITEMS: Array<{ id: Page; label: string; icon: typeof Activity }> = [
   { id: 'workspace', label: '更新院校', icon: CloudUpload },
   { id: 'files', label: '已上传文件', icon: Document },
   { id: 'batches', label: '运行批次', icon: Activity },
+  { id: 'versions', label: '版本历史', icon: Time },
   { id: 'docs', label: 'JSONL 结构说明', icon: Book },
   { id: 'settings', label: '系统配置状态', icon: Settings },
 ]
@@ -71,6 +74,56 @@ function formatBytes(value?: number | null): string {
 function formatTime(value?: string | null): string {
   if (!value) return '-'
   return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+
+const COUNTRY_NAMES: Record<string, string> = {
+  AU: '澳大利亚',
+  CA: '加拿大',
+  CH: '瑞士',
+  IE: '爱尔兰',
+  NZ: '新西兰',
+  SG: '新加坡',
+  UK: '英国',
+  US: '美国',
+}
+
+type GeographicRecord = { country_code?: string | null; region?: string | null }
+
+function regionLabel(item: GeographicRecord): string {
+  const countryCode = item.country_code?.trim().toUpperCase() ?? ''
+  const country = countryCode ? `${COUNTRY_NAMES[countryCode] ?? countryCode} · ${countryCode}` : ''
+  const rawRegion = item.region?.trim() ?? ''
+  const region = rawRegion && rawRegion.toUpperCase() !== countryCode ? rawRegion : ''
+  if (country && region) return `${country} · ${region}`
+  if (country) return `${country} · 未细分地区`
+  if (region) return region
+  return '未分区'
+}
+
+function regionKey(item: GeographicRecord): string {
+  const countryCode = item.country_code?.trim().toUpperCase() ?? ''
+  const rawRegion = item.region?.trim() ?? ''
+  const region = rawRegion && rawRegion.toUpperCase() !== countryCode ? rawRegion : ''
+  return `${countryCode}::${region}`
+}
+
+function groupByRegion<T extends GeographicRecord>(items: T[]): Array<{ key: string; label: string; items: T[] }> {
+  const groups = new Map<string, { key: string; label: string; items: T[] }>()
+  items.forEach((item) => {
+    const key = regionKey(item)
+    const group = groups.get(key) ?? { key, label: regionLabel(item), items: [] }
+    group.items.push(item)
+    groups.set(key, group)
+  })
+  return Array.from(groups.values()).sort((left, right) => {
+    if (left.key === '::') return 1
+    if (right.key === '::') return -1
+    return left.label.localeCompare(right.label, 'zh-CN')
+  })
+}
+
+function regionFilterItems<T extends GeographicRecord>(items: T[]): string[] {
+  return ['全部', ...Array.from(new Set(items.map(regionLabel))).sort((left, right) => left.localeCompare(right, 'zh-CN'))]
 }
 
 function statusLabel(status: string): string {
@@ -92,6 +145,16 @@ function statusKind(status: string): 'green' | 'red' | 'blue' | 'gray' | 'warm-g
   if (status === 'failed') return 'red'
   if (status === 'accepted') return 'gray'
   return 'blue'
+}
+
+function sourceStatusLabel(status: string): string {
+  if (status === 'not_submitted') return '未提交'
+  return statusLabel(status)
+}
+
+function sourceStatusKind(status: string): 'green' | 'red' | 'blue' | 'gray' {
+  if (status === 'not_submitted') return 'gray'
+  return statusKind(status) === 'green' ? 'green' : status === 'failed' ? 'red' : 'blue'
 }
 
 function failureStage(run: IngestionRun): string | null {
@@ -127,6 +190,7 @@ function App() {
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [directorySeed, setDirectorySeed] = useState<{ rootId: string; relativePath: string } | null>(null)
 
   const loadOverview = useCallback(async () => {
     setRefreshing(true)
@@ -154,6 +218,14 @@ function App() {
   }, [loadOverview])
 
   const currentRun = runs.find((run) => run.run_id === selectedRun) ?? null
+  const openSourceDirectory = (sourceFile: SourceFile) => {
+    const separator = sourceFile.relative_path.lastIndexOf('/')
+    setDirectorySeed({
+      rootId: sourceFile.source_root_id,
+      relativePath: separator === -1 ? '' : sourceFile.relative_path.slice(0, separator),
+    })
+    setPage('workspace')
+  }
 
   return (
     <div className="app-shell">
@@ -194,9 +266,10 @@ function App() {
               <p className="heading-copy">把 Markdown 作为唯一源文件，观察每次解析、校验、发布和下游导入。</p>
             </div>
           </div>
-          {page === 'workspace' && <Workspace onBatchCreated={loadOverview} onRunSelected={setSelectedRun} onOpenFiles={() => setPage('files')} />}
-          {page === 'files' && <FilesPage runs={runs} onRunSelected={setSelectedRun} onRefresh={loadOverview} />}
+          {page === 'workspace' && <Workspace initialDirectory={directorySeed} onBatchCreated={loadOverview} onRunSelected={setSelectedRun} onOpenFiles={() => setPage('files')} />}
+          {page === 'files' && <FilesPage runs={runs} onRunSelected={setSelectedRun} onRefresh={loadOverview} onOpenSourceDirectory={openSourceDirectory} />}
           {page === 'batches' && <BatchPage batches={batches} selectedBatch={selectedBatch} onSelectBatch={setSelectedBatch} onRunSelected={setSelectedRun} />}
+          {page === 'versions' && <VersionPage onRunSelected={setSelectedRun} />}
           {page === 'docs' && <DocsPage />}
           {page === 'settings' && <SettingsPage status={status} />}
           {currentRun && <RunInspector run={currentRun} onClose={() => setSelectedRun(null)} onChanged={loadOverview} />}
@@ -206,7 +279,7 @@ function App() {
   )
 }
 
-function Workspace({ onBatchCreated, onRunSelected, onOpenFiles }: { onBatchCreated: () => Promise<void>; onRunSelected: (id: string) => void; onOpenFiles: () => void }) {
+function Workspace({ initialDirectory, onBatchCreated, onRunSelected, onOpenFiles }: { initialDirectory: { rootId: string; relativePath: string } | null; onBatchCreated: () => Promise<void>; onRunSelected: (id: string) => void; onOpenFiles: () => void }) {
   const [mode, setMode] = useState<'upload' | 'directory'>('upload')
   const [files, setFiles] = useState<File[]>([])
   const [rootId, setRootId] = useState('')
@@ -218,6 +291,14 @@ function Workspace({ onBatchCreated, onRunSelected, onOpenFiles }: { onBatchCrea
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { void apiFetch<{ items: typeof roots }>('/v1/admin/source-roots').then((payload) => { setRoots(payload.items); if (payload.items[0]) setRootId(payload.items[0].root_id) }).catch(() => undefined) }, [])
+  useEffect(() => {
+    if (!initialDirectory) return
+    setMode('directory')
+    setRootId(initialDirectory.rootId)
+    setRelativePath(initialDirectory.relativePath)
+    setPreview(null)
+    setMessage(`已定位到 ${initialDirectory.relativePath || '根目录'}，可以生成预览`)
+  }, [initialDirectory])
 
   const updatePreviewItem = (itemId: string, patch: Partial<PreviewItem>) => {
     setPreview((current) => {
@@ -334,33 +415,140 @@ function RecentRuns({ onRunSelected }: { onRunSelected: (id: string) => void }) 
   return <RunTable runs={runs} onRunSelected={onRunSelected} />
 }
 
-function FilesPage({ runs, onRunSelected, onRefresh }: { runs: IngestionRun[]; onRunSelected: (id: string) => void; onRefresh: () => Promise<void> }) {
+function FilesPage({ runs, onRunSelected, onRefresh, onOpenSourceDirectory }: { runs: IngestionRun[]; onRunSelected: (id: string) => void; onRefresh: () => Promise<void>; onOpenSourceDirectory: (sourceFile: SourceFile) => void }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('全部')
+  const [regionFilter, setRegionFilter] = useState('全部')
+  const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([])
+  const [sourceQuery, setSourceQuery] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('全部')
+  const [sourceRegionFilter, setSourceRegionFilter] = useState('全部')
+  const [sourceLoading, setSourceLoading] = useState(false)
   const filterItems = ['全部', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '失败']
+  const sourceFilterItems = ['全部', '未提交', '排队中', '解析中', '质量校验', '发布中', 'L1 已发布', '失败', '内容未变化']
+  const loadSourceFiles = useCallback(async () => {
+    setSourceLoading(true)
+    try {
+      const payload = await apiFetch<{ items: SourceFile[] }>('/v1/admin/source-files?limit=500')
+      setSourceFiles(payload.items)
+    } catch {
+      setSourceFiles([])
+    } finally {
+      setSourceLoading(false)
+    }
+  }, [])
+  useEffect(() => { void loadSourceFiles() }, [loadSourceFiles])
+  const sourceRegionItems = regionFilterItems(sourceFiles)
+  const runRegionItems = regionFilterItems(runs)
   const filtered = runs.filter((run) => {
-    const haystack = `${run.source_filename ?? ''} ${run.university_id} ${run.run_id}`.toLowerCase()
+    const haystack = `${run.source_filename ?? ''} ${run.university_id} ${run.university_name ?? ''} ${run.run_id} ${regionLabel(run)}`.toLowerCase()
     const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase())
     const matchesFilter = filter === '全部' || statusLabel(run.status) === filter
-    return matchesQuery && matchesFilter
+    const matchesRegion = regionFilter === '全部' || regionLabel(run) === regionFilter
+    return matchesQuery && matchesFilter && matchesRegion
   })
+  const filteredSourceFiles = sourceFiles.filter((file) => {
+    const haystack = `${file.filename} ${file.relative_path} ${file.university_id} ${file.university_name} ${regionLabel(file)}`.toLowerCase()
+    const matchesQuery = !sourceQuery.trim() || haystack.includes(sourceQuery.trim().toLowerCase())
+    const matchesFilter = sourceFilter === '全部' || sourceStatusLabel(file.source_status) === sourceFilter
+    const matchesRegion = sourceRegionFilter === '全部' || regionLabel(file) === sourceRegionFilter
+    return matchesQuery && matchesFilter && matchesRegion
+  })
+  const sourceGroups = groupByRegion(filteredSourceFiles)
+  const runGroups = groupByRegion(filtered)
+  const refresh = async () => {
+    await Promise.all([onRefresh(), loadSourceFiles()])
+  }
 
-  return <section className="workbench-section files-section">
-    <div className="section-title-row">
-      <div><p className="eyebrow">UPLOADED FILES</p><h2>已上传文件</h2><p>这里展示所有已接收的 Markdown 文件。点击一行或“在线查看”，进入 raw、JSONL、差异和质量审计。</p></div>
-      <Button kind="ghost" renderIcon={Renew} onClick={() => void onRefresh()}>刷新列表</Button>
-    </div>
-    <div className="files-toolbar">
-      <TextInput id="files-query" size="sm" labelText="搜索文件" placeholder="按文件名、院校或运行 ID 搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} />
-      <Dropdown id="files-status" size="sm" titleText="状态筛选" label="全部" items={filterItems} selectedItem={filter} onChange={({ selectedItem }) => setFilter(selectedItem ?? '全部')} />
-      <span className="mono files-count">显示 {filtered.length} / {runs.length}</span>
-    </div>
-    {filtered.length ? <RunTable runs={filtered} onRunSelected={onRunSelected} /> : <EmptyState title="没有匹配文件" body={runs.length ? '换一个文件名、院校或状态筛选条件。' : '上传 Markdown 后，文件会出现在这里。'} />}
-  </section>
+  return <div className="files-page">
+    <section className="workbench-section source-files-section">
+      <div className="section-title-row">
+        <div><p className="eyebrow">SERVER SOURCE</p><h2>服务器源文件</h2><p>这里读取配置的宿主机 Markdown 目录。文件已经存在，不代表它已经提交、解析或发布，所以未提交文件也会显示。</p></div>
+        <Button kind="ghost" renderIcon={Renew} disabled={sourceLoading} onClick={() => void refresh()}>刷新列表</Button>
+      </div>
+      <div className="files-toolbar">
+        <TextInput id="source-files-query" size="sm" labelText="搜索源文件" placeholder="按文件名、路径或院校搜索" value={sourceQuery} onChange={(event) => setSourceQuery(event.target.value)} decorator={<Search size={16} />} />
+        <Dropdown id="source-files-status" size="sm" titleText="源文件状态" label="全部" items={sourceFilterItems} selectedItem={sourceFilter} onChange={({ selectedItem }) => setSourceFilter(selectedItem ?? '全部')} />
+        <Dropdown id="source-files-region" size="sm" titleText="地区" label="全部" items={sourceRegionItems} selectedItem={sourceRegionFilter} onChange={({ selectedItem }) => setSourceRegionFilter(selectedItem ?? '全部')} />
+        <span className="mono files-count">显示 {filteredSourceFiles.length} / {sourceFiles.length}</span>
+      </div>
+      {sourceGroups.length ? sourceGroups.map((group) => <RegionSection key={group.key} label={group.label} count={group.items.length} noun="文件"><SourceFileTable files={group.items} onRunSelected={onRunSelected} onOpenSourceDirectory={onOpenSourceDirectory} /></RegionSection>) : <EmptyState title={sourceLoading ? '正在读取服务器目录' : '没有可见的服务器源文件'} body={sourceFiles.length ? '换一个文件名、路径、地区或状态筛选条件。' : '请确认 Markdown 位于配置的服务器源目录，或者先刷新列表。'} />}
+    </section>
+    <section className="workbench-section submitted-files-section">
+      <div className="section-title-row">
+        <div><p className="eyebrow">INGESTION RUNS</p><h2>已提交运行记录</h2><p>只有提交过预览并进入队列的文件才会有 run。在线查看会打开 raw、JSONL、差异和质量审计。</p></div>
+      </div>
+      <div className="files-toolbar">
+        <TextInput id="files-query" size="sm" labelText="搜索运行记录" placeholder="按文件名、院校或运行 ID 搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} />
+        <Dropdown id="files-status" size="sm" titleText="运行状态" label="全部" items={filterItems} selectedItem={filter} onChange={({ selectedItem }) => setFilter(selectedItem ?? '全部')} />
+        <Dropdown id="files-region" size="sm" titleText="地区" label="全部" items={runRegionItems} selectedItem={regionFilter} onChange={({ selectedItem }) => setRegionFilter(selectedItem ?? '全部')} />
+        <span className="mono files-count">显示 {filtered.length} / {runs.length}</span>
+      </div>
+      {runGroups.length ? runGroups.map((group) => <RegionSection key={group.key} label={group.label} count={group.items.length} noun="运行记录"><RunTable runs={group.items} onRunSelected={onRunSelected} /></RegionSection>) : <EmptyState title="没有匹配的运行记录" body={runs.length ? '换一个文件名、院校、地区或状态筛选条件。' : '服务器源文件需要先生成预览并提交，才会产生运行记录。'} />}
+    </section>
+  </div>
+}
+
+function RegionSection({ label, count, noun, children }: { label: string; count: number; noun: string; children: ReactNode }) {
+  return <section className="region-group"><div className="region-group-heading"><div><span className="region-kicker">REGION</span><h3>{label}</h3></div><span className="mono">{count} 个{noun}</span></div>{children}</section>
+}
+
+function SourceFileTable({ files, onRunSelected, onOpenSourceDirectory }: { files: SourceFile[]; onRunSelected: (id: string) => void; onOpenSourceDirectory: (sourceFile: SourceFile) => void }) {
+  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>源文件</TableHeader><TableHeader>院校映射</TableHeader><TableHeader>地区</TableHeader><TableHeader>源文件状态</TableHeader><TableHeader>最近运行</TableHeader><TableHeader>修改时间</TableHeader><TableHeader>操作</TableHeader></TableRow></TableHead><TableBody>{files.map((file) => <TableRow key={`${file.source_root_id}:${file.relative_path}`} onClick={() => file.run_id && onRunSelected(file.run_id)} className={file.run_id ? 'clickable-row' : undefined}><TableCell><div className="file-cell"><Document size={18} /><div><strong>{file.filename}</strong><span>{file.relative_path}</span><span className="mono">{formatBytes(file.size_bytes)}</span></div></div></TableCell><TableCell><strong>{file.university_name || file.university_id}</strong><span className="subcell mono">{file.university_id}</span>{file.issues[0] && <span className="run-error">{file.issues[0].message}</span>}</TableCell><TableCell><span className="region-cell">{file.region || file.country_code || '未分区'}</span><span className="subcell mono">{file.country_code || '-'}</span></TableCell><TableCell><Tag type={sourceStatusKind(file.source_status)}>{sourceStatusLabel(file.source_status)}</Tag>{file.is_current && <span className="subcell">当前版本</span>}</TableCell><TableCell>{file.run_id ? <><strong className="mono">{file.run_id}</strong><span className="subcell">{file.run_updated_at ? formatTime(file.run_updated_at) : '-'}</span></> : <span className="subcell">尚未提交</span>}</TableCell><TableCell className="mono">{formatTime(file.modified_at)}</TableCell><TableCell>{file.run_id ? <Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(file.run_id as string) }}>在线查看</Button> : <Button kind="tertiary" size="sm" renderIcon={FolderOpen} onClick={(event) => { event.stopPropagation(); onOpenSourceDirectory(file) }}>扫描所在目录</Button>}</TableCell></TableRow>)}</TableBody></Table></div>
 }
 
 function RunTable({ runs, onRunSelected }: { runs: IngestionRun[]; onRunSelected: (id: string) => void }) {
-  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>文件</TableHeader><TableHeader>院校</TableHeader><TableHeader>阶段与错误</TableHeader><TableHeader>L1</TableHeader><TableHeader>WeKnora</TableHeader><TableHeader>更新时间</TableHeader><TableHeader>查看</TableHeader></TableRow></TableHead><TableBody>{runs.map((run) => <TableRow key={run.run_id} onClick={() => onRunSelected(run.run_id)} className="clickable-row"><TableCell><div className="file-cell"><Document size={18} /><div><strong>{run.source_filename || run.run_id}</strong><span className="mono">{run.run_id}</span></div></div></TableCell><TableCell><strong>{run.university_id}</strong><span className="subcell">{run.operation}{run.source_size_bytes ? ` · ${formatBytes(run.source_size_bytes)}` : ''}</span></TableCell><TableCell><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag>{run.queue_position && <span className="subcell">队列第 {run.queue_position}</span>}{runStatusDetail(run) && <span className="run-error">{runStatusDetail(run)}</span>}</TableCell><TableCell>{run.opensearch_published || run.status === 'published' || run.status === 'unchanged' ? <Tag type="green">已发布</Tag> : run.status === 'failed' ? <Tag type="red">未发布</Tag> : <Tag type="blue">处理中</Tag>}</TableCell><TableCell><WeKnoraState run={run} /></TableCell><TableCell className="mono">{formatTime(run.updated_at)}</TableCell><TableCell><Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(run.run_id) }}>在线查看</Button></TableCell></TableRow>)}</TableBody></Table></div>
+  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>文件</TableHeader><TableHeader>院校</TableHeader><TableHeader>地区</TableHeader><TableHeader>阶段与错误</TableHeader><TableHeader>L1</TableHeader><TableHeader>WeKnora</TableHeader><TableHeader>更新时间</TableHeader><TableHeader>查看</TableHeader></TableRow></TableHead><TableBody>{runs.map((run) => <TableRow key={run.run_id} onClick={() => onRunSelected(run.run_id)} className="clickable-row"><TableCell><div className="file-cell"><Document size={18} /><div><strong>{run.source_filename || run.run_id}</strong><span className="mono">{run.run_id}</span></div></div></TableCell><TableCell><strong>{run.university_name || run.university_id}</strong><span className="subcell">{run.university_id}{run.operation ? ` · ${run.operation}` : ''}{run.source_size_bytes ? ` · ${formatBytes(run.source_size_bytes)}` : ''}</span></TableCell><TableCell><span className="region-cell">{run.region || run.country_code || '未分区'}</span><span className="subcell mono">{run.country_code || '-'}</span></TableCell><TableCell><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag>{run.queue_position && <span className="subcell">队列第 {run.queue_position}</span>}{runStatusDetail(run) && <span className="run-error">{runStatusDetail(run)}</span>}</TableCell><TableCell>{run.opensearch_published || run.status === 'published' || run.status === 'unchanged' ? <Tag type="green">已发布</Tag> : run.status === 'failed' ? <Tag type="red">未发布</Tag> : <Tag type="blue">处理中</Tag>}</TableCell><TableCell><WeKnoraState run={run} /></TableCell><TableCell className="mono">{formatTime(run.updated_at)}</TableCell><TableCell><Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(run.run_id) }}>在线查看</Button></TableCell></TableRow>)}</TableBody></Table></div>
+}
+
+function publicationStateLabel(state: string): string {
+  return ({ current: '当前', superseded: '已替换', failed: '失败', staging: '暂存' }[state] ?? state)
+}
+
+function publicationStateKind(state: string): 'green' | 'red' | 'blue' | 'gray' {
+  if (state === 'current') return 'green'
+  if (state === 'failed') return 'red'
+  if (state === 'staging') return 'blue'
+  return 'gray'
+}
+
+function VersionPage({ onRunSelected }: { onRunSelected: (id: string) => void }) {
+  const [versions, setVersions] = useState<UniversityVersion[]>([])
+  const [query, setQuery] = useState('')
+  const [stateFilter, setStateFilter] = useState('全部')
+  const [regionFilter, setRegionFilter] = useState('全部')
+  const [loading, setLoading] = useState(false)
+  const stateItems = ['全部', '当前', '已替换', '失败', '暂存']
+
+  const loadVersions = useCallback(async () => {
+    setLoading(true)
+    try {
+      const payload = await apiFetch<{ items: UniversityVersion[] }>('/v1/admin/versions?limit=500')
+      setVersions(payload.items)
+    } catch {
+      setVersions([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void loadVersions() }, [loadVersions])
+
+  const regionItems = regionFilterItems(versions)
+  const filtered = versions.filter((version) => {
+    const haystack = `${version.university_id ?? ''} ${version.university_name ?? ''} ${version.dataset_version} ${version.version_id} ${version.source_filename ?? ''} ${regionLabel(version)}`.toLowerCase()
+    const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase())
+    const matchesState = stateFilter === '全部' || publicationStateLabel(version.publication_state) === stateFilter
+    const matchesRegion = regionFilter === '全部' || regionLabel(version) === regionFilter
+    return matchesQuery && matchesState && matchesRegion
+  })
+  const groups = groupByRegion(filtered)
+
+  return <div className="versions-page"><section className="workbench-section version-catalog-section"><div className="section-title-row"><div><p className="eyebrow">POSTGRESQL CATALOG</p><h2>版本历史</h2><p>直接读取 PostgreSQL 的 school_versions。这里不依赖文件是否已经提交，也不要求先打开某个运行记录。</p></div><Button kind="ghost" renderIcon={Renew} disabled={loading} onClick={() => void loadVersions()}>刷新列表</Button></div><div className="files-toolbar"><TextInput id="versions-query" size="sm" labelText="搜索版本" placeholder="按院校、版本号或文件名搜索" value={query} onChange={(event) => setQuery(event.target.value)} decorator={<Search size={16} />} /><Dropdown id="versions-state" size="sm" titleText="版本状态" label="全部" items={stateItems} selectedItem={stateFilter} onChange={({ selectedItem }) => setStateFilter(selectedItem ?? '全部')} /><Dropdown id="versions-region" size="sm" titleText="地区" label="全部" items={regionItems} selectedItem={regionFilter} onChange={({ selectedItem }) => setRegionFilter(selectedItem ?? '全部')} /><span className="mono files-count">显示 {filtered.length} / {versions.length}</span></div>{groups.length ? groups.map((group) => <RegionSection key={group.key} label={group.label} count={group.items.length} noun="个版本"><VersionCatalogTable versions={group.items} onRunSelected={onRunSelected} /></RegionSection>) : <EmptyState title={loading ? '正在读取 PostgreSQL 版本' : '没有版本记录'} body={versions.length ? '换一个院校、版本号、地区或状态筛选条件。' : '如果数据库中有版本，请检查 Fast Router 是否连接到了同一个 PostgreSQL 实例。'} />}</section></div>
+}
+
+function VersionCatalogTable({ versions, onRunSelected }: { versions: UniversityVersion[]; onRunSelected: (id: string) => void }) {
+  return <div className="table-scroll"><Table size="lg"><TableHead><TableRow><TableHeader>院校</TableHeader><TableHeader>版本</TableHeader><TableHeader>状态</TableHeader><TableHeader>源文件</TableHeader><TableHeader>记录数</TableHeader><TableHeader>创建时间</TableHeader><TableHeader>关联运行</TableHeader></TableRow></TableHead><TableBody>{versions.map((version) => <TableRow key={`${version.university_id ?? 'unknown'}:${version.version_id}`} onClick={() => version.run_id && onRunSelected(version.run_id)} className={version.run_id ? 'clickable-row' : undefined}><TableCell><strong>{version.university_name || version.university_id || '未知院校'}</strong><span className="subcell mono">{version.university_id || '-'}</span></TableCell><TableCell><strong className="mono">{version.dataset_version}</strong><span className="subcell mono">{version.version_id}</span></TableCell><TableCell><Tag type={publicationStateKind(version.publication_state)}>{publicationStateLabel(version.publication_state)}</Tag>{version.rollback_available && <span className="subcell">可回滚</span>}</TableCell><TableCell>{version.source_filename ? <><strong>{version.source_filename}</strong><span className="subcell">{version.source_relative_path || '历史导入未记录路径'}</span></> : <span className="subcell">历史导入未记录源文件名</span>}</TableCell><TableCell><span className="mono">{Object.entries(version.record_counts ?? {}).map(([key, value]) => `${key}:${value}`).join(' · ') || '-'}</span></TableCell><TableCell className="mono">{formatTime(version.published_at || version.created_at)}</TableCell><TableCell>{version.run_id ? <Button kind="ghost" size="sm" renderIcon={ArrowRight} onClick={(event) => { event.stopPropagation(); onRunSelected(version.run_id as string) }}>打开运行</Button> : <Tag type="cool-gray">无运行关联</Tag>}</TableCell></TableRow>)}</TableBody></Table></div>
 }
 
 function BatchPage({ batches, selectedBatch, onSelectBatch, onRunSelected }: { batches: Batch[]; selectedBatch: string | null; onSelectBatch: (id: string) => void; onRunSelected: (id: string) => void }) {
@@ -454,11 +642,11 @@ function DocsPage() {
   const [selected, setSelected] = useState<string | null>(null)
   useEffect(() => { void apiFetch<{ items: Guide[] }>('/v1/admin/schema-catalog').then((payload) => { setGuides(payload.items); setSelected(payload.items[0]?.entity ?? null) }).catch(() => undefined) }, [])
   const current = guides.find((guide) => guide.entity === selected) ?? guides[0]
-  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何协作</h2><p>这些文件不是重复导出，而是把检索、事实、来源、关联和上下文拆成可以独立验证的层。</p></div></div><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>为什么要拆开</h3><p>{current.why}</p></div><div><h3>稳定关联字段</h3><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div><h3>最小结构</h3><p className="section-note">下面是以 MIT 为例的最小必需结构。代码块使用 JSONC 注释，方便直接理解每个字段的作用。</p><CopyExample text={MINIMUM_EXAMPLES[current.entity] ?? '{}'} /><h3>字段说明</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>字段描述</TableHeader><TableHeader>MIT 示例</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).map(([field, property]) => { const note = getFieldNote(current.entity, field); return <TableRow key={field}><TableCell className="mono">{field}{current.schema.required?.includes(field) && <span className="required-mark">必填</span>}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || (property.enum ? 'enum' : 'object')}</TableCell><TableCell className="field-description">{note.description}{property.enum?.length ? <span className="field-constraint">可选值：{property.enum.join(', ')}</span> : null}</TableCell><TableCell><code className="field-example">{note.example}</code></TableCell></TableRow> })}</TableBody></Table></div></div>}</div><RetrievalGuide /></section>
+  return <section className="workbench-section docs-section"><div className="section-intro"><div><p className="eyebrow">DATA MODEL</p><h2>五类 JSONL 如何按问题调用</h2><p>拆分是职责分工，不是每个问题都要把五份文件全部检索一遍。先识别问题类型，再只打开能回答它的记录。</p></div></div><div className="docs-layout"><div className="docs-nav">{guides.map((guide) => <button key={guide.entity} className={guide.entity === current?.entity ? 'is-active' : ''} onClick={() => setSelected(guide.entity)}><span className="mono">{guide.entity}</span><strong>{guide.label}</strong></button>)}</div>{current && <div className="docs-content"><h2>{current.label}</h2><p className="lead-copy">{current.purpose}</p><div className="docs-grid"><div><h3>它在检索里的位置</h3><p>{current.role ?? '按职责读取的结构化数据。'}</p><p className="query-rule">{current.query_rule ?? '按问题意图决定是否读取。'}</p></div><div><h3>为什么要拆开</h3><p>{current.why}</p><div className="field-list">{current.links.map((field) => <code key={field}>{field}</code>)}</div></div></div>{(current.entity === 'source_registry' || current.entity === 'url_manifest') && <div className="source-model-note"><strong>MIT 里的实际关系</strong><p>课程页、费用页和索引页的 URL 本身就是来源。MIT 当前两份产物逐条对应同一个 URL，发布到 PostgreSQL 时会折叠到同一张 source_registry 表。url_manifest 只是为了兼容现有产物和 URL 级关联的投影，不需要人工再维护一套官网来源。</p></div>}<h3>最小结构</h3><p className="section-note">下面是以 MIT 为例的最小必需结构。代码块使用 JSONC 注释，方便直接理解每个字段的作用。</p><CopyExample text={MINIMUM_EXAMPLES[current.entity] ?? '{}'} /><h3>字段说明</h3><div className="field-table"><Table size="sm"><TableHead><TableRow><TableHeader>字段</TableHeader><TableHeader>类型</TableHeader><TableHeader>字段描述</TableHeader><TableHeader>MIT 示例</TableHeader></TableRow></TableHead><TableBody>{Object.entries(current.schema.properties ?? {}).map(([field, property]) => { const note = getFieldNote(current.entity, field); return <TableRow key={field}><TableCell className="mono">{field}{current.schema.required?.includes(field) && <span className="required-mark">必填</span>}</TableCell><TableCell>{Array.isArray(property.type) ? property.type.join(' | ') : property.type || (property.enum ? 'enum' : 'object')}</TableCell><TableCell className="field-description">{note.description}{property.enum?.length ? <span className="field-constraint">可选值：{property.enum.join(', ')}</span> : null}</TableCell><TableCell><code className="field-example">{note.example}</code></TableCell></TableRow> })}</TableBody></Table></div></div>}</div><RetrievalGuide /></section>
 }
 
 function RetrievalGuide() {
-  return <section className="retrieval-guide"><div className="section-title-row"><div><p className="eyebrow">RETRIEVAL FLOW</p><h2>问题如何拆到不同 JSONL</h2><p>例子：用户问“mit里有哪些计算机相关的学科”。先缩小院校和主题，再查专业目录，最后绑定来源。与截止日期、学费相关的事实不会混入专业清单。</p></div></div><div className="retrieval-flow" aria-label="MIT 计算机相关学科问题的检索流程">{RETRIEVAL_FLOW.map((step, index) => <div className="flow-step" key={step.label}><div className={`flow-node ${index === 0 ? 'is-query' : index === RETRIEVAL_FLOW.length - 1 ? 'is-result' : ''}`}><span className="flow-label">{step.label}</span><strong>{step.title}</strong><p>{step.detail}</p></div>{index < RETRIEVAL_FLOW.length - 1 && <ArrowRight className="flow-connector" size={20} />}</div>)}</div><div className="retrieval-roles"><div className="retrieval-role-head"><span>JSONL</span><span>主要作用</span><span>它主要回答什么</span></div>{RETRIEVAL_ROLES.map((item) => <div className="retrieval-role" key={item.entity}><code>{item.entity}</code><strong>{item.role}</strong><span>{item.questions}</span></div>)}</div></section>
+  return <section className="retrieval-guide"><div className="section-title-row"><div><p className="eyebrow">RETRIEVAL FLOW</p><h2>一个问题只走必要的路径</h2><p>例子：用户问“mit里有哪些计算机相关的学科”。下面蓝色路径是本题真正需要的记录，灰色分支是明确跳过的内容。</p></div></div><div className="retrieval-flow" aria-label="MIT 计算机相关学科问题的检索流程">{RETRIEVAL_FLOW.map((step, index) => <div className="flow-step" key={step.label}><div className={`flow-node ${index === 0 ? 'is-query' : index === RETRIEVAL_FLOW.length - 1 ? 'is-result' : ''}`}><span className="flow-label">{step.label}</span><strong>{step.title}</strong><p>{step.detail}</p></div>{index < RETRIEVAL_FLOW.length - 1 && <ArrowRight className="flow-connector" size={20} />}</div>)}</div><div className="retrieval-split"><div className="retrieval-path is-active"><div className="retrieval-path-head"><span className="path-mark">本题查询</span><strong>返回“计算机相关学科”</strong></div><p><code>entity_contexts</code> 只在需要确认范围时使用，核心检索是 <code>catalog_entries</code>，最后沿 <code>source_id</code> 取 <code>source_registry</code> 的官方 URL。</p></div><div className="retrieval-path is-skipped"><div className="retrieval-path-head"><span className="path-mark">本题跳过</span><strong>不查无关事实</strong></div><p><code>quick_facts</code> 只回答学费、截止日期和申请费。<code>url_manifest</code> 在本项目是 URL 关联投影，只有从 URL 反查专业或读取 URL 级导入信息时才单独使用。</p></div></div><div className="retrieval-decisions"><h3>换一个问题，路径会变化</h3>{RETRIEVAL_DECISIONS.map((item) => <div className="retrieval-decision" key={item.question}><div><strong>{item.question}</strong><span>{item.reason}</span></div><div><span className="decision-label">查询</span><code>{item.use}</code></div><div><span className="decision-label">跳过</span><code>{item.skip}</code></div></div>)}</div><div className="retrieval-roles"><div className="retrieval-role-head"><span>JSONL</span><span>主要作用</span><span>它主要回答什么</span></div>{RETRIEVAL_ROLES.map((item) => <div className="retrieval-role" key={item.entity}><code>{item.entity}</code><strong>{item.role}</strong><span>{item.questions}</span></div>)}</div></section>
 }
 
 function SettingsPage({ status }: { status: AdminStatus | null }) {

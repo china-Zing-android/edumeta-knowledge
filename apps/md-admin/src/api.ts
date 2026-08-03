@@ -42,6 +42,9 @@ export type Preview = {
 export type IngestionRun = {
   run_id: string
   university_id: string
+  university_name?: string | null
+  country_code?: string | null
+  region?: string | null
   school_tier: string
   operation: string
   version_id: string
@@ -93,6 +96,10 @@ export type Batch = {
 }
 
 export type UniversityVersion = {
+  university_id?: string
+  university_name?: string | null
+  country_code?: string | null
+  region?: string | null
   version_id: string
   dataset_version: string
   publication_state: 'current' | 'superseded' | 'failed' | 'staging'
@@ -103,6 +110,9 @@ export type UniversityVersion = {
   run_id: string | null
   run_status: string | null
   source_filename: string | null
+  source_relative_path?: string | null
+  source_root_id?: string | null
+  artifact_available?: boolean
   rollback_available: boolean
 }
 
@@ -113,6 +123,31 @@ export type Artifact = {
   size_bytes?: number
   sha256?: string
   line_count?: number
+}
+
+export type SourceFile = {
+  filename: string
+  relative_path: string
+  source_root_id: string
+  size_bytes: number
+  modified_at: string
+  sha256: string | null
+  university_id: string
+  university_name: string
+  country_code: string | null
+  region: string | null
+  school_tier: 'core' | 'non_core'
+  operation: 'create' | 'update'
+  issues: Array<{ code: string; message: string; impact?: Record<string, unknown> }>
+  ready: boolean
+  source_status: string
+  run_id: string | null
+  run_university_id: string | null
+  run_university_name: string | null
+  run_operation: string | null
+  run_version_id: string | null
+  run_updated_at: string | null
+  is_current: boolean
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')

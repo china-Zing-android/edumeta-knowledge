@@ -100,10 +100,12 @@ services:
       WEKNORA_SEARCH_TIMEOUT_SECONDS: ${WEKNORA_SEARCH_TIMEOUT_SECONDS:-2.8}
       TRACE_LOG_PATH: ${TRACE_LOG_PATH:-/app/data/traces/retrieval.jsonl}
       ADMIN_CORS_ORIGINS: ${ADMIN_CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000}
+      INGESTION_SOURCE_PARENT: ${INGESTION_SOURCE_PARENT:-/app/data/raw-md}
+      INGESTION_SOURCE_ROOT: ${INGESTION_SOURCE_ROOT:-}
     volumes:
       - ingestion_data:/app/data/ingestions
       - batch_import_state:/app/data/import-state
-      - ../data/raw-md/universities:/app/data/raw-md/universities:ro
+      - ../data/raw-md:/app/data/raw-md:ro
       - ../data/traces:/app/data/traces
       - ../qa:/app/qa:ro
     ports:

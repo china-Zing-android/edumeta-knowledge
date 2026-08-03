@@ -32,6 +32,8 @@ JSONL_GUIDE: dict[str, dict[str, Any]] = {
         "label": "专业与学位目录",
         "purpose": "记录学校有哪些专业、辅修和研究生项目，是 L1 专业检索的主体数据。",
         "why": "把专业身份、学位层级、院系和来源拆成稳定记录，支持结构化检索和版本差异。",
+        "role": "主体检索数据",
+        "query_rule": "问有哪些专业、学科、学位或某个专业属于哪个学院时优先查询。",
         "minimum": ["entry_id", "university_id", "school", "department", "level", "degree_level", "program_name", "source_id", "source_url", "dataset_version", "status"],
         "links": ["entry_id", "source_id", "university_id"],
     },
@@ -39,20 +41,26 @@ JSONL_GUIDE: dict[str, dict[str, Any]] = {
         "label": "关键事实",
         "purpose": "记录学费、截止日期、语言要求、申请费和资助等明确事实。",
         "why": "让确定性的数字和规则可以被单独校验、追踪来源并快速回答。",
+        "role": "按问题调用的事实分支",
+        "query_rule": "只有问题涉及学费、截止日期、申请费、语言要求或资助时才查询。",
         "minimum": ["fact_id", "university_id", "fact_type", "fact_key", "raw_value", "source_id", "source_url", "capture_date", "dataset_version", "review_status", "conflict_status"],
         "links": ["fact_id", "source_id", "entry_id", "university_id"],
     },
     "source_registry": {
-        "label": "官网来源登记",
-        "purpose": "管理被系统认可的官网来源、来源类型、校验状态和 WeKnora 导入状态。",
-        "why": "集中管理来源生命周期，避免同一 URL 在不同数据记录中产生漂移。",
+        "label": "来源与 URL 主登记",
+        "purpose": "在当前 MD-first 流程里，一条官方 URL 本身就是一条来源主记录。这里管理 URL 的官方性、生命周期、解析状态和 WeKnora 导入状态。",
+        "why": "你提供的课程页、费用页和索引页不需要再登记一个额外的官网入口。主登记只是给这条 URL 补上稳定 ID、版本和状态，避免同一 URL 的状态散落在多处。",
+        "role": "URL 来源主文件",
+        "query_rule": "需要确认答案的官方证据、来源是否有效或 WeKnora 导入状态时查询。普通专业筛选不需要先查它。",
         "minimum": ["source_id", "university_id", "canonical_url", "url_type", "topics", "official_source", "priority", "status", "parser_status", "weknora_import_status", "capture_date", "last_verified", "dataset_version"],
         "links": ["source_id", "canonical_url", "university_id"],
     },
     "url_manifest": {
-        "label": "URL 关联清单",
-        "purpose": "连接 URL、专业、主题和 WeKnora 文档，是 L1 到 L2 的地址簿。",
-        "why": "把来源本身和来源与业务实体的关系分开，支持精准范围检索和局部重导入。",
+        "label": "URL 关联投影（兼容产物）",
+        "purpose": "它不是另一份官网来源登记，而是把主来源 URL 与 entry_ids、主题和 WeKnora 文档 ID 展开，供既有脚本和按 URL 范围的检索使用。",
+        "why": "MIT 里它与 source_registry 是一对一的同 URL 记录。当前 PostgreSQL 发布会把它折叠进 source_registry，因此普通维护不需要同时修改两份；保留文件是为了兼容已有解析器、下载包和导入脚本。",
+        "role": "来源主文件的关联投影",
+        "query_rule": "只有需要回答某个 URL 覆盖哪些专业或主题，或需要读取 URL 级 WeKnora 文档关联时才使用。",
         "minimum": ["url_id", "source_id", "university_id", "entry_ids", "source_url", "canonical_url", "url_type", "topics", "official_source", "import_status", "capture_date", "dataset_version"],
         "links": ["url_id", "source_id", "entry_ids", "university_id"],
     },
@@ -60,6 +68,8 @@ JSONL_GUIDE: dict[str, dict[str, Any]] = {
         "label": "学校与专业上下文",
         "purpose": "提供学校和专业的展示上下文、亮点、关联实体和可继续追问的主题。",
         "why": "把检索结果从单个匹配记录提升为可解释的学校或专业上下文。",
+        "role": "发现和范围定位",
+        "query_rule": "需要确认院校、学院、上下文或可继续追问的主题时查询；已知院校和意图时可以跳过。",
         "minimum": ["context_id", "entity_type", "entity_id", "university_id", "title", "display_label", "attributes", "highlights", "sample_children", "related_entities", "available_topics", "source_ids", "dataset_version", "status"],
         "links": ["context_id", "entity_id", "entry_id", "source_ids", "university_id"],
     },
@@ -119,8 +129,14 @@ class AdminControlPlane:
         if raw:
             return {f"root_{index}": Path(item).resolve() for index, item in enumerate(raw.split(os.pathsep)) if item.strip()}
 
-        default = os.getenv("INGESTION_SOURCE_ROOT", "data/raw-md/universities")
-        return {"universities": Path(default).resolve()}
+        configured_root = os.getenv("INGESTION_SOURCE_ROOT", "").strip()
+        if configured_root:
+            root = Path(configured_root)
+        else:
+            parent = Path(os.getenv("INGESTION_SOURCE_PARENT", "data/raw-md"))
+            child = parent / "universities"
+            root = child if child.is_dir() else parent
+        return {"universities": root.resolve()}
 
     def _root(self, root_id: str) -> Path:
         root = self.roots.get(root_id)
@@ -181,14 +197,48 @@ class AdminControlPlane:
         heading = next((line[2:].strip() for line in content.splitlines() if line.startswith("# ")), "")
         heading = re.sub(r"\s+(?:Knowledge Base|知识库).*$", "", heading, flags=re.IGNORECASE).strip()
         country = path.parts[0].upper() if path.parts and re.fullmatch(r"[a-zA-Z]{2}", path.parts[0]) else None
+        declared_country = AdminControlPlane._metadata_value(content, "country_code", "Country code", "country", "国家")
+        if declared_country and re.fullmatch(r"[A-Za-z]{2}", declared_country):
+            country = declared_country.upper()
+        declared_region = AdminControlPlane._metadata_value(content, "region", "Region", "地区", "所在地区")
+        declared_country_name = AdminControlPlane._metadata_value(content, "country", "Country", "国家")
+        if (
+            declared_country_name
+            and not re.fullmatch(r"[A-Za-z]{2}", declared_country_name)
+            and (not declared_region or (country and declared_region.upper() == country))
+        ):
+            declared_region = declared_country_name
+        if declared_region and country and declared_region.upper() == country:
+            declared_region = None
         return {
             "university_id": candidate,
             "university_name": heading or candidate.replace("_", " ").title(),
             "country_code": country,
-            "region": None,
+            "region": declared_region,
             "school_tier": "core",
             "aliases": [],
         }
+
+    @staticmethod
+    def _metadata_value(text: str, *keys: str) -> str | None:
+        """Read a small metadata declaration without requiring a YAML dependency.
+
+        Source Markdown in the wild uses both ``**Region**: ...`` and YAML-like
+        ``region: ...`` lines. The admin preview only needs these lightweight
+        identity fields, so keep the reader deliberately tolerant and bounded
+        to the metadata already loaded for the file.
+        """
+        alternatives = "|".join(re.escape(key) for key in keys)
+        pattern = re.compile(
+            rf"^\s*(?:[-*]\s*)?(?:\*\*)?(?:{alternatives})(?:\*\*)?\s*:\s*(.+?)\s*$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        match = pattern.search(text)
+        if not match:
+            return None
+        value = match.group(1).strip().strip("`\"'")
+        value = re.sub(r"\s+#.*$", "", value).strip().strip("`\"'")
+        return value or None
 
     @staticmethod
     def _read_manifest(root: Path) -> dict[str, dict[str, Any]]:
@@ -213,17 +263,30 @@ class AdminControlPlane:
         manifest: dict[str, Any] | None,
         existing: dict[str, dict[str, Any]],
         storage_name: str | None = None,
+        compute_hash: bool = True,
     ) -> dict[str, Any]:
         relative = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.name
         size = path.stat().st_size
-        content = path.read_text(encoding="utf-8", errors="replace")[:65536]
-        metadata = dict(manifest or self._infer_metadata(path, content))
+        content = path.read_text(encoding="utf-8", errors="replace")[:256 * 1024]
+        inferred = self._infer_metadata(path, content)
+        metadata = dict(inferred)
+        if manifest:
+            metadata.update({
+                key: value
+                for key, value in manifest.items()
+                if key in {"university_id", "university_name", "country_code", "region", "school_tier", "aliases"}
+                and value not in (None, "", [])
+            })
         metadata.setdefault("aliases", [])
         metadata.setdefault("school_tier", "core")
         metadata.setdefault("region", None)
         metadata.setdefault("country_code", None)
         metadata.setdefault("university_name", "")
         metadata["university_id"] = str(metadata.get("university_id") or "").strip().lower()
+        existing_metadata = existing.get(metadata["university_id"], {})
+        for key in ("country_code", "region"):
+            if not metadata.get(key) and existing_metadata.get(key):
+                metadata[key] = existing_metadata[key]
         issues: list[dict[str, Any]] = []
         if size > MAX_MD_FILE_BYTES:
             issues.append({"code": "file_too_large", "message": "单个 Markdown 文件超过 20 MiB"})
@@ -241,13 +304,187 @@ class AdminControlPlane:
             "source_root_id": root_id,
             "storage_name": storage_name,
             "size_bytes": size,
-            "sha256": _sha256(path),
+            "sha256": _sha256(path) if compute_hash else None,
             "operation": operation,
             "issues": issues,
             "ready": not issues,
             **{key: metadata.get(key) for key in ("university_id", "university_name", "country_code", "region", "school_tier", "aliases")},
         }
         return item
+
+    def _latest_source_runs(self, source_root_id: str) -> dict[str, dict[str, Any]]:
+        """Return the newest persisted run for each server-relative Markdown path."""
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (r.source_relative_path)
+                       r.source_relative_path, r.run_id, r.university_id, r.operation,
+                       r.status, r.version_id, r.updated_at,
+                       (v.publication_state = 'current') AS is_current,
+                       u.university_name
+                  FROM ingestion_runs AS r
+                  LEFT JOIN school_versions AS v
+                    ON v.university_id = r.university_id
+                   AND v.version_id = r.version_id
+                  LEFT JOIN universities AS u
+                    ON u.university_id = r.university_id
+                 WHERE r.source_root_id=%s
+                   AND r.source_relative_path IS NOT NULL
+                 ORDER BY r.source_relative_path, r.created_at DESC, r.run_id DESC
+                """,
+                (source_root_id,),
+            )
+            rows = cursor.fetchall()
+        return {
+            str(row[0]): {
+                "run_id": row[1],
+                "university_id": row[2],
+                "operation": row[3],
+                "status": row[4],
+                "version_id": row[5],
+                "updated_at": row[6].isoformat() if row[6] else None,
+                "is_current": bool(row[7]),
+                "university_name": row[8],
+            }
+            for row in rows
+        }
+
+    def _latest_university_runs(self) -> dict[str, dict[str, Any]]:
+        """Return a fallback run map for imports created before source paths existed.
+
+        The original catalog loader created ingestion_runs but did not populate
+        source_relative_path/source_root_id. Those runs still represent the
+        version currently stored in PostgreSQL, so source discovery can safely
+        associate the newest run by university when an exact path match is not
+        available.
+        """
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT ON (r.university_id)
+                       r.university_id, r.run_id, r.university_id, r.operation,
+                       r.status, r.version_id, r.updated_at,
+                       (v.publication_state = 'current') AS is_current,
+                       u.university_name
+                  FROM ingestion_runs AS r
+                  LEFT JOIN school_versions AS v
+                    ON v.university_id = r.university_id
+                   AND v.version_id = r.version_id
+                  LEFT JOIN universities AS u
+                    ON u.university_id = r.university_id
+                 ORDER BY r.university_id, r.created_at DESC, r.run_id DESC
+                """
+            )
+            rows = cursor.fetchall()
+        return {
+            str(row[0]): {
+                "run_id": row[1],
+                "university_id": row[2],
+                "operation": row[3],
+                "status": row[4],
+                "version_id": row[5],
+                "updated_at": row[6].isoformat() if row[6] else None,
+                "is_current": bool(row[7]),
+                "university_name": row[8],
+            }
+            for row in rows
+        }
+
+    def source_files(
+        self,
+        *,
+        source_root_id: str | None = None,
+        source_relative_path: str | None = None,
+        query: str | None = None,
+        status: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+        include_hash: bool = False,
+    ) -> dict[str, Any]:
+        """List Markdown files that exist in configured server source roots.
+
+        A source file is deliberately not treated as an ingestion run. It stays
+        visible with ``not_submitted`` until the operator creates a preview and
+        commits it into the durable ingestion queue.
+        """
+        if source_root_id:
+            root_ids = [source_root_id]
+        else:
+            root_ids = sorted(self.roots)
+        existing = self._existing_universities()
+        needle = (query or "").strip().lower()
+        requested_status = (status or "").strip().lower()
+        collected: list[dict[str, Any]] = []
+
+        for root_id in root_ids:
+            root = self._root(root_id)
+            if not root.exists() or not root.is_dir():
+                continue
+            target = self._safe_path(root, source_relative_path) if source_relative_path else root
+            if not target.is_dir():
+                raise ValueError("source path must be a directory")
+            manifest_rows = self._read_manifest(root)
+            latest_runs = self._latest_source_runs(root_id)
+            latest_university_runs = self._latest_university_runs()
+            for path in sorted(target.rglob("*.md")):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                relative = path.relative_to(root).as_posix()
+                item = self._make_item(
+                    path,
+                    root=root,
+                    root_id=root_id,
+                    manifest=manifest_rows.get(relative),
+                    existing=existing,
+                    compute_hash=include_hash,
+                )
+                run = latest_runs.get(relative) or latest_university_runs.get(item["university_id"])
+                source_status = run["status"] if run else "not_submitted"
+                searchable = " ".join(
+                    str(value or "")
+                    for value in (item["filename"], item["relative_path"], item["university_id"], item["university_name"])
+                ).lower()
+                if needle and needle not in searchable:
+                    continue
+                if requested_status and requested_status != source_status:
+                    continue
+                stat = path.stat()
+                collected.append({
+                    "filename": item["filename"],
+                    "relative_path": item["relative_path"],
+                    "source_root_id": root_id,
+                    "size_bytes": item["size_bytes"],
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                    "sha256": item["sha256"],
+                    "university_id": item["university_id"],
+                    "university_name": item["university_name"],
+                    "country_code": item["country_code"],
+                    "region": item["region"],
+                    "school_tier": item["school_tier"],
+                    "operation": item["operation"],
+                    "issues": item["issues"],
+                    "ready": item["ready"],
+                    "source_status": source_status,
+                    "run_id": run["run_id"] if run else None,
+                    "run_university_id": run["university_id"] if run else None,
+                    "run_university_name": run["university_name"] if run else None,
+                    "run_operation": run["operation"] if run else None,
+                    "run_version_id": run["version_id"] if run else None,
+                    "run_updated_at": run["updated_at"] if run else None,
+                    "is_current": run["is_current"] if run else False,
+                })
+
+        collected.sort(key=lambda item: (str(item["source_root_id"]), str(item["relative_path"])))
+        safe_limit = min(max(limit, 1), 500)
+        safe_offset = max(offset, 0)
+        return {
+            "items": collected[safe_offset:safe_offset + safe_limit],
+            "total_count": len(collected),
+            "limit": safe_limit,
+            "offset": safe_offset,
+            "source_root_id": source_root_id,
+            "source_relative_path": source_relative_path,
+        }
 
     def _mark_duplicate_ids(self, items: list[dict[str, Any]]) -> None:
         grouped: dict[str, list[dict[str, Any]]] = {}
@@ -620,43 +857,105 @@ class AdminControlPlane:
                     archive.write(path, arcname=filename)
         return output
 
-    def versions(self, university_id: str) -> dict[str, Any]:
-        with self._connect() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT v.version_id, v.dataset_version, v.publication_state, v.input_hash,
-                       v.record_counts, v.created_at, v.published_at, v.superseded_at,
-                       r.run_id, r.status, r.source_filename
-                  FROM school_versions AS v
-                  LEFT JOIN LATERAL (
-                    SELECT run_id, status, source_filename
-                      FROM ingestion_runs
-                     WHERE university_id=v.university_id AND version_id=v.version_id
-                     ORDER BY created_at DESC LIMIT 1
-                  ) AS r ON true
-                 WHERE v.university_id=%s
-                 ORDER BY v.created_at DESC
-                """,
-                (university_id,),
-            )
-            rows = cursor.fetchall()
+    def _version_items(self, university_id: str, rows: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=90)
         version_items: list[dict[str, Any]] = []
         for row in rows:
+            version_university_id = str(row[16] or university_id) if len(row) > 16 else university_id
+            publication_state = row[2]
+            superseded_at = row[7]
+            run_id = row[8]
             artifact_available = False
-            if row[8] and row[7] and row[7] >= cutoff:
-                artifact_available = (self.service.raw_root / str(university_id) / str(row[8]) / "normalized").is_dir()
+            if run_id:
+                within_retention = publication_state in {"current", "failed", "staging"}
+                if publication_state == "superseded":
+                    within_retention = bool(superseded_at and superseded_at >= cutoff)
+                if within_retention:
+                    artifact_available = (self.service.raw_root / version_university_id / str(run_id) / "normalized").is_dir()
             version_items.append({
-                "version_id": row[0], "dataset_version": row[1], "publication_state": row[2], "input_hash": row[3],
-                "record_counts": row[4] or {}, "created_at": row[5].isoformat(),
+                "university_id": version_university_id,
+                "university_name": row[13],
+                "country_code": row[14],
+                "region": row[15],
+                "version_id": row[0],
+                "dataset_version": row[1],
+                "publication_state": publication_state,
+                "input_hash": row[3],
+                "record_counts": row[4] or {},
+                "created_at": row[5].isoformat(),
                 "published_at": row[6].isoformat() if row[6] else None,
-                "superseded_at": row[7].isoformat() if row[7] else None,
-                "run_id": row[8], "run_status": row[9], "source_filename": row[10],
-                "rollback_available": row[2] == "superseded" and artifact_available,
+                "superseded_at": superseded_at.isoformat() if superseded_at else None,
+                "run_id": run_id,
+                "run_status": row[9],
+                "source_filename": row[10],
+                "source_relative_path": row[11],
+                "source_root_id": row[12],
+                "artifact_available": artifact_available,
+                "rollback_available": publication_state == "superseded" and artifact_available,
             })
+        return version_items
+
+    def _version_query(self, where_sql: str = "") -> str:
+        return f"""
+            SELECT v.version_id, v.dataset_version, v.publication_state, v.input_hash,
+                   v.record_counts, v.created_at, v.published_at, v.superseded_at,
+                   r.run_id, r.status, r.source_filename, r.source_relative_path,
+                   r.source_root_id, u.university_name, u.country_code, u.region,
+                   v.university_id
+              FROM school_versions AS v
+              LEFT JOIN universities AS u
+                ON u.university_id = v.university_id
+              LEFT JOIN LATERAL (
+                SELECT run_id, status, source_filename, source_relative_path, source_root_id
+                  FROM ingestion_runs
+                 WHERE university_id=v.university_id AND version_id=v.version_id
+                 ORDER BY created_at DESC LIMIT 1
+              ) AS r ON true
+             {where_sql}
+             ORDER BY v.created_at DESC, v.university_id, v.version_id
+        """
+
+    def versions(self, university_id: str) -> dict[str, Any]:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(self._version_query("WHERE v.university_id=%s"), (university_id,))
+            rows = cursor.fetchall()
         return {
             "university_id": university_id,
-            "items": version_items,
+            "items": self._version_items(university_id, rows),
+        }
+
+    def list_versions(
+        self,
+        *,
+        query: str | None = None,
+        publication_state: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if query and query.strip():
+            pattern = f"%{query.strip()}%"
+            clauses.append("(v.university_id ILIKE %s OR u.university_name ILIKE %s OR v.dataset_version ILIKE %s OR COALESCE(r.source_filename, '') ILIKE %s)")
+            params.extend([pattern, pattern, pattern, pattern])
+        if publication_state and publication_state.strip():
+            clauses.append("v.publication_state=%s")
+            params.append(publication_state.strip())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        safe_limit = min(max(limit, 1), 500)
+        safe_offset = max(offset, 0)
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"{self._version_query(where_sql)} LIMIT %s OFFSET %s",
+                (*params, safe_limit, safe_offset),
+            )
+            rows = cursor.fetchall()
+        items = self._version_items("", rows)
+        return {
+            "items": items,
+            "total_count": len(items),
+            "limit": safe_limit,
+            "offset": safe_offset,
         }
 
     def _load_dataset_dir(self, path: Path, university_id: str) -> dict[str, list[dict[str, Any]]]:

@@ -57,18 +57,43 @@ class FakeIngestionService:
         return None if run_id == "missing" else {"run_id": run_id, "status": "published", "counts": {"catalog_entries": 157}}
 
 
+class FakeAdminControl:
+    def source_files(self, **kwargs):
+        return {
+            "items": [{"relative_path": "us/mit.md", "source_status": "not_submitted"}],
+            "total_count": 1,
+            "limit": kwargs["limit"],
+            "offset": kwargs["offset"],
+        }
+
+    def list_versions(self, **kwargs):
+        return {
+            "items": [{
+                "university_id": "mit",
+                "version_id": "ver_mit_1",
+                "publication_state": "current",
+            }],
+            "total_count": 1,
+            "limit": kwargs["limit"],
+            "offset": kwargs["offset"],
+        }
+
+
 class FastRouterApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.previous_engine = main.retrieval_engine
         self.previous_ingestion = main.ingestion_service
+        self.previous_admin = main.admin_control
         main.retrieval_engine = FakeRetrievalEngine()
         main.ingestion_service = FakeIngestionService()
+        main.admin_control = FakeAdminControl()
         self.client = TestClient(main.app)
 
     def tearDown(self) -> None:
         self.client.close()
         main.retrieval_engine = self.previous_engine
         main.ingestion_service = self.previous_ingestion
+        main.admin_control = self.previous_admin
 
     def test_retrieve_contract(self) -> None:
         response = self.client.post("/v1/retrieve", json={"query": "MIT Economics", "university_id": "mit"})
@@ -154,6 +179,18 @@ class FastRouterApiTests(unittest.TestCase):
     def test_ingestion_status_and_not_found(self) -> None:
         self.assertEqual(self.client.get("/v1/ingestions/ing_test").status_code, 200)
         self.assertEqual(self.client.get("/v1/ingestions/missing").status_code, 404)
+
+    def test_admin_source_files_exposes_unsubmitted_server_markdown(self) -> None:
+        response = self.client.get("/v1/admin/source-files?source_root_id=universities&limit=20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"][0]["source_status"], "not_submitted")
+
+    def test_admin_versions_exposes_postgres_version_catalog(self) -> None:
+        response = self.client.get("/v1/admin/versions?limit=20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"][0]["version_id"], "ver_mit_1")
 
 
 if __name__ == "__main__":

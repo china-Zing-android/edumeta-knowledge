@@ -892,13 +892,16 @@ class IngestionService:
         with psycopg.connect(self.postgres_dsn) as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT run_id, university_id, school_tier, operation, version_id, input_hash, status,
-                       stage_failures, error_message, created_at, updated_at,
-                       weknora_knowledge_base_id, weknora_kb_operation, quality_audits,
-                       weknora_error, batch_id, source_filename, source_size_bytes, source_relative_path,
-                       source_root_id, source_mode, force_publish_requested, force_publish_reason,
-                       queue_claimed_at, started_at, finished_at
-                  FROM ingestion_runs WHERE run_id=%s
+                SELECT r.run_id, r.university_id, r.school_tier, r.operation, r.version_id, r.input_hash, r.status,
+                       r.stage_failures, r.error_message, r.created_at, r.updated_at,
+                       r.weknora_knowledge_base_id, r.weknora_kb_operation, r.quality_audits,
+                       r.weknora_error, r.batch_id, r.source_filename, r.source_size_bytes, r.source_relative_path,
+                       r.source_root_id, r.source_mode, r.force_publish_requested, r.force_publish_reason,
+                       r.queue_claimed_at, r.started_at, r.finished_at,
+                       u.university_name, u.country_code, u.region
+                  FROM ingestion_runs AS r
+                  LEFT JOIN universities AS u ON u.university_id = r.university_id
+                 WHERE r.run_id=%s
                 """,
                 (run_id,),
             )
@@ -958,6 +961,9 @@ class IngestionService:
             "started_at": row[24].isoformat() if row[24] else None,
             "finished_at": row[25].isoformat() if row[25] else None,
             "queue_position": queue_position,
+            "university_name": row[26],
+            "country_code": row[27],
+            "region": row[28],
             "is_current": is_current,
             "weknora": {
                 "summary": weknora_summary,
