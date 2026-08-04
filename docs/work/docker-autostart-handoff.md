@@ -1,4 +1,4 @@
-Status: active
+Status: done
 
 # Docker Autostart Handoff
 
@@ -30,8 +30,8 @@ reboots, while keeping the PostgreSQL migration bootstrap one-shot.
 
 - Red test confirmed the persistent services had no restart policy.
 - Green restart-policy contract test: `1 passed, 11 deselected`.
-- Full Compose contract verification should be run before release; the
-  repository still contains the unrelated pre-existing Markdown mount assertion.
+- Full Compose contract verification: `11 passed, 1 failed`; the one failure
+  is the unrelated pre-existing Markdown mount assertion.
 
 ## Deployment note
 
