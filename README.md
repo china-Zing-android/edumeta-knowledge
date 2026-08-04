@@ -18,6 +18,12 @@ The first start automatically:
 2. Starts Fast Router only after migrations succeed.
 3. Starts the MCP Gateway only after Fast Router is healthy.
 
+Long-running services use Docker's `restart: unless-stopped` policy, so Docker
+will bring them back after a Docker Engine or host reboot. The `bootstrap`
+container remains a one-shot migration job. Docker Desktop must itself be
+configured to start at login; on Linux, enable the Docker service with
+`sudo systemctl enable --now docker`.
+
 Check the stack:
 
 ```bash
@@ -54,8 +60,8 @@ This profile exposes Fast Router on both `127.0.0.1:8000` and
 `100.74.163.113:8000`, and MCP on both `127.0.0.1:18765/mcp` and
 `100.74.163.113:18765/mcp`. The host's existing port `8765` is not used. It
 OpenSearch is available on `0.0.0.0:19200` so containers can use the server's
-host IP. It also defaults `WEKNORA_IMPORT_ENABLED=false` so audited L1 batch ingestion does
-not automatically upload URLs. See
+host IP. It also defaults `WEKNORA_IMPORT_ENABLED=false` so audited L1 batch
+ingestion does not automatically upload URLs. See
 `docs/operations/server-update-and-validation.md` for the complete update,
 ingestion, regression, and MCP verification sequence.
 

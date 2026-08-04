@@ -69,6 +69,15 @@ def test_compose_applies_migrations_before_router_and_starts_mcp_by_default() ->
     assert services["tool-gateway"]["depends_on"]["fast-router"]["condition"] == "service_healthy"
 
 
+def test_long_running_services_restart_after_docker_restarts() -> None:
+    payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
+    services = payload["services"]
+
+    for service_name in ("postgres", "opensearch", "opensearch-dashboards", "fast-router", "md-admin", "tool-gateway"):
+        assert services[service_name].get("restart") == "unless-stopped"
+    assert services["bootstrap"]["restart"] == "no"
+
+
 def test_postgres_has_enough_shared_memory_for_vacuuming_ingestion_tables() -> None:
     payload = yaml.safe_load((ROOT / "infra/docker-compose.yml").read_text("utf-8"))
 

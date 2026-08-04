@@ -18,6 +18,41 @@
 
 服务器 profile 默认 `WEKNORA_IMPORT_ENABLED=false`。这表示 Markdown 仍会解析、入 PostgreSQL、发布 OpenSearch、提取 URL 并生成 queued job，但不会把 URL 发送给 WeKnora。
 
+## Docker 自启动与手动恢复
+
+长驻服务已配置 `restart: unless-stopped`。Linux 主机还需要启用 Docker
+服务：
+
+```bash
+sudo systemctl enable --now docker
+```
+
+Docker Desktop 用户需要在设置中打开“登录时启动 Docker Desktop”。首次拉取
+包含重启策略的版本后，在项目根目录执行一次强制重建：
+
+```bash
+git pull origin main
+
+docker compose \
+  -f compose.yaml \
+  -f compose.server.yaml \
+  --profile dashboards \
+  up -d --force-recreate
+```
+
+以后如果 Docker 没有自动拉起，可手动执行同一命令但去掉
+`--force-recreate`：
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.server.yaml \
+  --profile dashboards \
+  up -d
+```
+
+`bootstrap` 是一次性 migration 容器，正常状态为 `Exited (0)`，不是故障。
+
 ## 一、更新前检查
 
 进入项目目录：

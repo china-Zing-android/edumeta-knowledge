@@ -10,6 +10,7 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U edumeta -d edumeta"]
       interval: 5s
@@ -27,6 +28,7 @@ services:
       - "0.0.0.0:${OPENSEARCH_PORT:-9200}:9200"
     volumes:
       - opensearch_data:/usr/share/opensearch/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
       interval: 10s
@@ -123,6 +125,7 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+    restart: unless-stopped
 
   md-admin:
     image: edumeta-md-admin:local
@@ -142,6 +145,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   tool-gateway:
     build:
@@ -162,6 +166,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
 volumes:
   postgres_data:
