@@ -125,6 +125,59 @@ export type Artifact = {
   line_count?: number
 }
 
+export type ProvenanceField = {
+  kind: 'direct' | 'derived' | 'system' | string
+  line_start?: number
+  line_end?: number
+  column?: string
+  raw_value?: unknown
+  rule?: string
+}
+
+export type ProvenanceMapping = {
+  mapping_id: string
+  university_id?: string
+  dataset_version?: string
+  jsonl: {
+    entity: string
+    record_id: string
+    record_hash?: string
+  }
+  md: {
+    file?: string | null
+    sha256?: string
+    line_start: number
+    line_end: number
+    section_path?: string
+    snippet?: string
+  }
+  fields?: Record<string, ProvenanceField>
+  verification?: {
+    status?: string
+    version_match?: boolean
+    line_match?: boolean
+    all_fields_mapped?: boolean
+    match_score?: number
+  }
+}
+
+export type ProvenancePayload = {
+  mapping: ProvenanceMapping
+  jsonl: {
+    artifact: string
+    line: number
+    record: Record<string, unknown>
+  }
+  markdown: {
+    artifact?: string
+    offset?: number
+    limit?: number
+    total?: number
+    highlighted_range?: { line_start: number; line_end: number }
+    items: Array<{ line: number; text?: string; highlighted?: boolean }>
+  }
+}
+
 export type SourceFile = {
   filename: string
   relative_path: string

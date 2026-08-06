@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, Query, UploadFile
@@ -13,6 +14,7 @@ from .admin import AdminControlPlane
 from .ingestion import IngestionService
 from .opensearch_retrieval import CurrentVersionMap, OpenSearchRetrievalClient
 from .retrieval import RetrievalEngine
+from .traceability import TraceabilityIndex
 from .tracing import write_trace
 from .weknora_client import WeknoraSearchClient
 from .weknora_worker import WeknoraJobWorker, weknora_import_enabled
@@ -91,9 +93,11 @@ def _initialize_services() -> None:
         version_map = CurrentVersionMap(postgres_dsn)
         version_map.refresh()
         version_map.start()
+        traceability = TraceabilityIndex(Path(os.getenv("INGESTION_DATA_ROOT", "data/ingestions")))
         retrieval_engine = RetrievalEngine(
             OpenSearchRetrievalClient(opensearch_url, version_map),
             WeknoraSearchClient.from_env(),
+            traceability=traceability,
         )
         ingestion_service = IngestionService.from_env()
         if ingestion_service:
@@ -357,6 +361,14 @@ def get_admin_artifact_content(
 ) -> dict[str, Any]:
     try:
         return _require_admin().artifact_page(run_id, artifact, offset=offset, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/admin/ingestion-runs/{run_id}/provenance/{entity}/{record_id}")
+def get_admin_provenance(run_id: str, entity: str, record_id: str) -> dict[str, Any]:
+    try:
+        return _require_admin().provenance(run_id, entity, record_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

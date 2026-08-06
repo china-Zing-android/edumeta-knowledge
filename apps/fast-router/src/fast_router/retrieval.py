@@ -7,6 +7,7 @@ from typing import Any
 from catalog_parser.disciplines import resolve_discipline_query
 from .opensearch_retrieval import OpenSearchRetrievalClient, detected_course_code, detected_program_slug, infer_fact_types
 from .query_planning import QueryPlan, plan_query
+from .traceability import traceability_summary
 
 
 PROGRAM_TOPIC_PRIORITY = {
@@ -158,9 +159,10 @@ def infer_search_direction(
 
 
 class RetrievalEngine:
-    def __init__(self, l1: OpenSearchRetrievalClient, weknora: Any | None = None) -> None:
+    def __init__(self, l1: OpenSearchRetrievalClient, weknora: Any | None = None, traceability: Any | None = None) -> None:
         self.l1 = l1
         self.weknora = weknora
+        self.traceability = traceability
 
     def retrieve(
         self,
@@ -293,8 +295,8 @@ class RetrievalEngine:
         warnings = ["missing_evidence"] if query_plan.stage in {"detail", "fact"} else []
         return self._response(trace_id, "not_found", resolved_id, [], [], [], warnings, started, result.elapsed_ms, 0, dataset_version, context_payload, query_plan)
 
-    @staticmethod
     def _response(
+        self,
         trace_id: str,
         mode: str,
         university_id: str | None,
@@ -310,6 +312,18 @@ class RetrievalEngine:
         query_plan: QueryPlan | None = None,
     ) -> dict[str, Any]:
         query_plan = query_plan or QueryPlan(stage="discovery", requested_aspects=(), course_codes=(), max_primary_entities=1)
+        decorated_matches = [
+            {
+                **row,
+                "traceability": traceability_summary(
+                    row,
+                    university_id=university_id or row.get("university_id"),
+                    dataset_version=dataset_version or row.get("dataset_version"),
+                    resolver=self.traceability,
+                ),
+            }
+            for row in matches
+        ]
         return {
             "trace_id": trace_id,
             "mode": mode,
@@ -320,7 +334,7 @@ class RetrievalEngine:
                 "stage": query_plan.stage,
                 "requested_aspects": list(query_plan.requested_aspects),
             },
-            "matches": matches,
+            "matches": decorated_matches,
             "context": context_payload or empty_context(),
             "evidence": evidence,
             "missing_slots": missing_slots,

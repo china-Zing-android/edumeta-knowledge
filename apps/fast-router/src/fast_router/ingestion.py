@@ -411,6 +411,7 @@ class IngestionService:
             from psycopg.types.json import Jsonb
             from catalog_parser.adapters import parse_school_markdown
             from catalog_parser.postgres_loader import load_dataset, publish_school_version, stage_school_records, activate_school_version, upsert_university
+            from catalog_parser.provenance import build_provenance, write_provenance_jsonl
             from indexer.opensearch_publisher import activate_published_school, audit_staged_school, publish_school
 
             normalized_dir = run_dir / "normalized"
@@ -445,14 +446,34 @@ class IngestionService:
             ):
                 for row in rows:
                     row["dataset_version"] = effective_version
+            markdown_text = raw_path.read_text("utf-8")
             result.write_jsonl(normalized_dir)
+            provenance = build_provenance(
+                markdown_text,
+                {
+                    "catalog_entries": result.catalog_entries,
+                    "quick_facts": result.quick_facts,
+                },
+                university_id=university_id,
+                dataset_version=effective_version,
+                source_path=raw_path.name,
+            )
+            write_provenance_jsonl(normalized_dir / "provenance.jsonl", provenance)
             pre_audit = run_pre_publish_audit(
                 normalized_dir,
                 university_id,
-                markdown_text=raw_path.read_text("utf-8"),
+                markdown_text=markdown_text,
                 parser_summary=result.summary,
                 allow_needs_review=force_publish,
             )
+            pre_audit["provenance"] = {
+                "status": "passed",
+                "mapping_count": len(provenance),
+                "review_required_count": sum(
+                    item["verification"]["status"] == "review_required" for item in provenance
+                ),
+                "unmapped_count": 0,
+            }
             if force_publish:
                 pre_audit["forced_publish"] = True
                 pre_audit["force_publish_reason"] = force_publish_reason

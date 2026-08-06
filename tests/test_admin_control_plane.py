@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -233,6 +234,38 @@ class AdminControlPlaneTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["relative_path"], "us/mit.md")
         self.assertEqual(payload["items"][0]["source_status"], "not_submitted")
         self.assertIsNone(payload["items"][0]["run_id"])
+
+    def test_provenance_returns_jsonl_record_and_highlighted_markdown_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_root = root / "example" / "ing_trace"
+            normalized = run_root / "normalized"
+            normalized.mkdir(parents=True)
+            (run_root / "input.md").write_text("# Example\n\n| program_name | source_url |\n| --- | --- |\n| Computer Science | https://example.edu/cs |\n", encoding="utf-8")
+            (normalized / "catalog_entries.jsonl").write_text(
+                json.dumps({"entry_id": "ent_1", "program_name": "Computer Science"}) + "\n",
+                encoding="utf-8",
+            )
+            (normalized / "provenance.jsonl").write_text(
+                json.dumps({
+                    "mapping_id": "prov_1",
+                    "jsonl": {"entity": "catalog_entries", "record_id": "ent_1"},
+                    "md": {"line_start": 5, "line_end": 5, "sha256": "abc"},
+                    "verification": {"status": "verified", "version_match": True},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            control = AdminControlPlane(_Service())
+            control._run_dir = lambda _run: run_root
+            control._run_context = lambda _run_id: {"run_id": "ing_trace", "university_id": "example", "version_id": "ver_1"}
+
+            payload = control.provenance("ing_trace", "catalog_entries", "ent_1")
+
+        self.assertEqual(payload["mapping"]["mapping_id"], "prov_1")
+        self.assertEqual(payload["jsonl"]["line"], 1)
+        highlighted = [item for item in payload["markdown"]["items"] if item["highlighted"]]
+        self.assertEqual([item["line"] for item in highlighted], [5])
+        self.assertEqual(payload["markdown"]["highlighted_range"], {"line_start": 5, "line_end": 5})
 
 
 if __name__ == "__main__":

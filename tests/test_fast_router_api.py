@@ -78,6 +78,20 @@ class FakeAdminControl:
             "offset": kwargs["offset"],
         }
 
+    def provenance(self, run_id, entity, record_id):
+        return {
+            "mapping": {
+                "mapping_id": "prov_1",
+                "jsonl": {"entity": entity, "record_id": record_id},
+                "verification": {"status": "verified"},
+            },
+            "jsonl": {"artifact": entity, "line": 1, "record": {"entry_id": record_id}},
+            "markdown": {
+                "highlighted_range": {"line_start": 7, "line_end": 7},
+                "items": [{"line": 7, "text": "| Computer Science |", "highlighted": True}],
+            },
+        }
+
 
 class FastRouterApiTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -191,6 +205,15 @@ class FastRouterApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["items"][0]["version_id"], "ver_mit_1")
+
+    def test_admin_provenance_exposes_jsonl_and_markdown_mapping(self) -> None:
+        response = self.client.get("/v1/admin/ingestion-runs/ing_test/provenance/catalog_entries/ent_1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["mapping"]["verification"]["status"], "verified")
+        self.assertEqual(payload["jsonl"]["line"], 1)
+        self.assertTrue(payload["markdown"]["items"][0]["highlighted"])
 
 
 if __name__ == "__main__":

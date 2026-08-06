@@ -44,6 +44,8 @@ import {
   artifactDownloadUrl,
   Batch,
   IngestionRun,
+  ProvenanceField,
+  ProvenancePayload,
   Preview,
   PreviewItem,
   SourceFile,
@@ -53,7 +55,8 @@ import { getFieldNote, MINIMUM_EXAMPLES, RETRIEVAL_DECISIONS, RETRIEVAL_FLOW, RE
 import './styles.css'
 
 type Page = 'workspace' | 'files' | 'batches' | 'versions' | 'docs' | 'settings'
-type ArtifactPage = { artifact: string; offset: number; limit: number; total: number; items: Array<Record<string, unknown>> }
+type ArtifactPageItem = { line: number; record?: Record<string, unknown>; text?: string; error?: string }
+type ArtifactPage = { artifact: string; offset: number; limit: number; total: number; items: ArtifactPageItem[] }
 type Guide = { entity: string; label: string; purpose: string; why: string; role?: string; query_rule?: string; minimum: string[]; links: string[]; schema: { required?: string[]; properties?: Record<string, { type?: string | string[]; enum?: string[] }> } }
 
 const NAV_ITEMS: Array<{ id: Page; label: string; icon: typeof Activity }> = [
@@ -158,6 +161,41 @@ function sourceStatusKind(status: string): 'green' | 'red' | 'blue' | 'gray' {
   if (status === 'not_submitted') return 'gray'
   if (status === 'superseded') return 'gray'
   return statusKind(status) === 'green' ? 'green' : status === 'failed' ? 'red' : 'blue'
+}
+
+function provenanceStatusLabel(status?: string): string {
+  return ({
+    verified: '已核验',
+    review_required: '需要复核',
+    unavailable: '没有来源映射',
+  }[status ?? 'unavailable'] ?? status ?? '没有来源映射')
+}
+
+function provenanceStatusKind(status?: string): 'green' | 'red' | 'gray' {
+  if (status === 'verified') return 'green'
+  if (status === 'review_required') return 'red'
+  return 'gray'
+}
+
+function provenanceFieldKindLabel(kind?: string): string {
+  return ({ direct: '直接来自 Markdown', derived: '按固定规则推导', system: '系统运行信息' }[kind ?? ''] ?? kind ?? '未说明')
+}
+
+function provenanceFieldKindClass(kind?: string): string {
+  return kind === 'direct' ? 'is-direct' : kind === 'derived' ? 'is-derived' : 'is-system'
+}
+
+function jsonlRecordId(artifact: string, record?: Record<string, unknown>): string | null {
+  if (!record || !['catalog_entries', 'quick_facts'].includes(artifact)) return null
+  const key = artifact === 'catalog_entries' ? 'entry_id' : 'fact_id'
+  const value = record[key]
+  return typeof value === 'string' && value ? value : null
+}
+
+function displayValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) return '-'
+  return JSON.stringify(value) ?? String(value)
 }
 
 function failureStage(run: IngestionRun): string | null {
@@ -636,6 +674,10 @@ function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose:
   const [artifactOffset, setArtifactOffset] = useState(0)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [provenanceTarget, setProvenanceTarget] = useState<{ entity: string; recordId: string } | null>(null)
+  const [provenance, setProvenance] = useState<ProvenancePayload | null>(null)
+  const [provenanceLoading, setProvenanceLoading] = useState(false)
+  const [provenanceError, setProvenanceError] = useState<string | null>(null)
   useEffect(() => {
     void apiFetch<{ items: Artifact[] }>(`/v1/admin/ingestion-runs/${run.run_id}/artifacts`).then((payload) => setArtifacts(payload.items)).catch(() => undefined)
     void apiFetch<Record<string, any>>(`/v1/admin/ingestion-runs/${run.run_id}/diff`).then(setDiff).catch(() => setDiff(null))
@@ -664,9 +706,99 @@ function RunInspector({ run, onClose, onChanged }: { run: IngestionRun; onClose:
       await onChanged()
     } catch (caught) { setMessage(caught instanceof Error ? caught.message : '补导入失败') } finally { setBusy(false) }
   }
+  const openProvenance = async (entity: string, recordId: string) => {
+    setProvenanceTarget({ entity, recordId })
+    setProvenance(null)
+    setProvenanceError(null)
+    setProvenanceLoading(true)
+    try {
+      const payload = await apiFetch<ProvenancePayload>(`/v1/admin/ingestion-runs/${encodeURIComponent(run.run_id)}/provenance/${encodeURIComponent(entity)}/${encodeURIComponent(recordId)}`)
+      setProvenance(payload)
+    } catch (caught) {
+      setProvenanceError(caught instanceof Error ? caught.message : '来源映射读取失败')
+    } finally {
+      setProvenanceLoading(false)
+    }
+  }
+  const selectArtifact = (nextArtifact: string) => {
+    setArtifact(nextArtifact)
+    setArtifactOffset(0)
+    setArtifactQuery('')
+    setProvenanceTarget(null)
+    setProvenance(null)
+    setProvenanceError(null)
+  }
   const visibleContent = content && artifact === 'raw_markdown' && artifactQuery.trim() ? { ...content, items: content.items.filter((item) => String(item.text ?? '').toLowerCase().includes(artifactQuery.trim().toLowerCase())) } : content
   const pageEnd = content ? Math.min(content.offset + content.items.length, content.total) : 0
-  return <section className="inspector"><div className="inspector-header"><div><p className="eyebrow">RUN DETAIL</p><h2>{run.source_filename || run.run_id}</h2><p className="mono">{run.run_id} · {run.university_id} · {run.version_id}</p></div><div className="inspector-actions"><a className="download-link" href={artifactDownloadUrl(run.run_id, 'all')}><Download size={16} />全部下载</a>{run.status === 'published' && run.is_current && <Button kind="tertiary" size="sm" disabled={busy} onClick={() => void importCurrent()}>补导入当前版本</Button>}{forceEligible && <Button kind="danger--tertiary" size="sm" onClick={() => setAction('force')}>强制发布</Button>}<Button kind="ghost" size="sm" hasIconOnly renderIcon={Undo} iconDescription="关闭" onClick={onClose} /></div></div>{message && <InlineNotification kind="info" lowContrast title={message} onCloseButtonClick={() => setMessage(null)} />}{run.status === 'failed' && <div className="failure-callout"><ErrorFilled size={20} /><div><strong>{run.error_message || '运行失败'}</strong><span>失败阶段和质量审计信息保留在下方。</span></div></div>}<div className="inspector-meta"><div><span>状态</span><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag></div><div><span>L1</span><strong>{run.opensearch_published ? '已发布' : '未发布'}</strong></div><div><span>WeKnora</span><WeKnoraState run={run} /></div><div><span>更新时间</span><strong>{formatTime(run.updated_at)}</strong></div></div><VersionHistory versions={versions} onRollback={(versionId) => { setRollbackVersionId(versionId); setAction('rollback') }} /><Tabs><TabList aria-label="运行详情"><Tab>产物查看</Tab><Tab>差异摘要</Tab><Tab>质量审计</Tab></TabList><TabPanels><TabPanel><div className="artifact-viewer"><div className="artifact-rail">{artifacts.filter((item) => item.available).map((item) => <button key={item.artifact} className={artifact === item.artifact ? 'is-active' : ''} onClick={() => { setArtifact(item.artifact); setArtifactOffset(0); setArtifactQuery('') }}><Document size={16} /><span>{item.artifact === 'raw_markdown' ? 'raw.md' : item.artifact}</span><small>{formatBytes(item.size_bytes)}</small></button>)}</div><div className="artifact-content"><div className="artifact-heading"><div><strong>在线查看</strong><span>{artifact === 'raw_markdown' ? '原始 Markdown，按行加载' : 'JSONL 记录，按页加载'}</span></div><a href={artifactDownloadUrl(run.run_id, artifact)} className="download-link"><Download size={14} />下载文件</a></div><div className="artifact-toolbar"><span className="mono">{content?.total ?? 0} 行{artifactQuery && visibleContent ? `，当前页命中 ${visibleContent.items.length}` : ''}</span>{artifact === 'raw_markdown' && <TextInput id="artifact-search" size="sm" labelText="搜索 raw" hideLabel placeholder="搜索当前页内容" decorator={<Search size={14} />} value={artifactQuery} onChange={(event) => setArtifactQuery(event.target.value)} />}</div>{visibleContent?.items.length ? artifact === 'raw_markdown' ? <pre className="raw-viewer">{visibleContent.items.map((item) => `${String(item.line).padStart(5, ' ')}  ${String(item.text ?? '')}`).join('\n')}</pre> : <div className="jsonl-list">{visibleContent.items.map((item, index) => <div key={index} className="jsonl-record"><span className="line-number">{String(item.line).padStart(4, '0')}</span><code>{JSON.stringify(item.record ?? item, null, 2)}</code></div>)}</div> : <EmptyState title="产物不可用" body={artifactQuery ? '没有匹配的行。' : '该运行尚未生成此文件。'} />}<div className="artifact-pagination"><span className="mono">{content?.total ? `${content.offset + 1}-${pageEnd} / ${content.total}` : '暂无内容'}</span><div><Button kind="ghost" size="sm" disabled={artifactOffset === 0} onClick={() => setArtifactOffset(Math.max(0, artifactOffset - 80))}>上一页</Button><Button kind="ghost" size="sm" disabled={!content || pageEnd >= content.total} onClick={() => setArtifactOffset(artifactOffset + 80)}>下一页</Button></div></div></div></div></TabPanel><TabPanel><DiffView diff={diff} /></TabPanel><TabPanel><AuditView run={run} /></TabPanel></TabPanels></Tabs><Modal open={action !== null} modalHeading={action === 'force' ? '确认强制发布' : '确认回滚'} primaryButtonText={busy ? '提交中...' : '确认'} secondaryButtonText="取消" onRequestClose={() => { setAction(null); setRollbackVersionId(null) }} onRequestSubmit={(event) => { event.preventDefault(); void runAction() }}><p className="modal-copy">{action === 'rollback' ? '这会切换 PostgreSQL current、OpenSearch current 和 Fast Router 版本缓存，不会删除 WeKnora 远端文档。请填写操作原因。' : '这会改变当前检索数据。请填写强制发布原因，提交后会留下审计记录。'}</p><TextInput id="action-reason" labelText="操作原因" value={reason} onChange={(event) => setReason(event.target.value)} /></Modal></section>
+  return (
+    <section className="inspector">
+      <div className="inspector-header">
+        <div><p className="eyebrow">RUN DETAIL</p><h2>{run.source_filename || run.run_id}</h2><p className="mono">{run.run_id} · {run.university_id} · {run.version_id}</p></div>
+        <div className="inspector-actions">
+          <a className="download-link" href={artifactDownloadUrl(run.run_id, 'all')}><Download size={16} />全部下载</a>
+          {run.status === 'published' && run.is_current && <Button kind="tertiary" size="sm" disabled={busy} onClick={() => void importCurrent()}>补导入当前版本</Button>}
+          {forceEligible && <Button kind="danger--tertiary" size="sm" onClick={() => setAction('force')}>强制发布</Button>}
+          <Button kind="ghost" size="sm" hasIconOnly renderIcon={Undo} iconDescription="关闭" onClick={onClose} />
+        </div>
+      </div>
+      {message && <InlineNotification kind="info" lowContrast title={message} onCloseButtonClick={() => setMessage(null)} />}
+      {run.status === 'failed' && <div className="failure-callout"><ErrorFilled size={20} /><div><strong>{run.error_message || '运行失败'}</strong><span>失败阶段和质量审计信息保留在下方。</span></div></div>}
+      <div className="inspector-meta">
+        <div><span>状态</span><Tag type={statusKind(run.status)}>{statusLabel(run.status)}</Tag></div>
+        <div><span>L1</span><strong>{run.opensearch_published ? '已发布' : '未发布'}</strong></div>
+        <div><span>WeKnora</span><WeKnoraState run={run} /></div>
+        <div><span>更新时间</span><strong>{formatTime(run.updated_at)}</strong></div>
+      </div>
+      <VersionHistory versions={versions} onRollback={(versionId) => { setRollbackVersionId(versionId); setAction('rollback') }} />
+      <Tabs>
+        <TabList aria-label="运行详情"><Tab>产物查看</Tab><Tab>差异摘要</Tab><Tab>质量审计</Tab></TabList>
+        <TabPanels>
+          <TabPanel>
+            <div className="artifact-viewer">
+              <div className="artifact-rail">
+                {artifacts.filter((item) => item.available).map((item) => <button key={item.artifact} className={artifact === item.artifact ? 'is-active' : ''} onClick={() => selectArtifact(item.artifact)}><Document size={16} /><span>{item.artifact === 'raw_markdown' ? 'raw.md' : item.artifact}</span><small>{formatBytes(item.size_bytes)}</small></button>)}
+              </div>
+              <div className="artifact-content">
+                <div className="artifact-heading"><div><strong>在线查看</strong><span>{artifact === 'raw_markdown' ? '原始 Markdown，按行加载' : 'JSONL 记录，按页加载'}</span></div><a href={artifactDownloadUrl(run.run_id, artifact)} className="download-link"><Download size={14} />下载文件</a></div>
+                <div className="artifact-toolbar"><span className="mono">{content?.total ?? 0} 行{artifactQuery && visibleContent ? `，当前页命中 ${visibleContent.items.length}` : ''}</span>{artifact === 'raw_markdown' && <TextInput id="artifact-search" size="sm" labelText="搜索 raw" hideLabel placeholder="搜索当前页内容" decorator={<Search size={14} />} value={artifactQuery} onChange={(event) => setArtifactQuery(event.target.value)} />}</div>
+                {visibleContent?.items.length ? artifact === 'raw_markdown' ? <pre className="raw-viewer">{visibleContent.items.map((item) => `${String(item.line).padStart(5, ' ')}  ${String(item.text ?? '')}`).join('\n')}</pre> : <div className="jsonl-list">{visibleContent.items.map((item, index) => {
+                  const recordId = jsonlRecordId(artifact, item.record)
+                  return <div key={index} className="jsonl-record"><span className="line-number">{String(item.line).padStart(4, '0')}</span><div className="jsonl-record-body"><div className="jsonl-record-toolbar"><span className="mono">JSONL 第 {item.line} 行</span>{recordId && <Button kind="ghost" size="sm" onClick={() => void openProvenance(artifact, recordId)}>查看来源映射</Button>}</div><code>{JSON.stringify(item.record ?? item, null, 2)}</code></div></div>
+                })}</div> : <EmptyState title="产物不可用" body={artifactQuery ? '没有匹配的行。' : '该运行尚未生成此文件。'} />}
+                {artifact !== 'raw_markdown' && provenanceTarget && <ProvenancePanel target={provenanceTarget} payload={provenance} loading={provenanceLoading} error={provenanceError} onClose={() => { setProvenanceTarget(null); setProvenance(null); setProvenanceError(null) }} />}
+                <div className="artifact-pagination"><span className="mono">{content?.total ? `${content.offset + 1}-${pageEnd} / ${content.total}` : '暂无内容'}</span><div><Button kind="ghost" size="sm" disabled={artifactOffset === 0} onClick={() => setArtifactOffset(Math.max(0, artifactOffset - 80))}>上一页</Button><Button kind="ghost" size="sm" disabled={!content || pageEnd >= content.total} onClick={() => setArtifactOffset(artifactOffset + 80)}>下一页</Button></div></div>
+              </div>
+            </div>
+          </TabPanel>
+          <TabPanel><DiffView diff={diff} /></TabPanel>
+          <TabPanel><AuditView run={run} /></TabPanel>
+        </TabPanels>
+      </Tabs>
+      <Modal open={action !== null} modalHeading={action === 'force' ? '确认强制发布' : '确认回滚'} primaryButtonText={busy ? '提交中...' : '确认'} secondaryButtonText="取消" onRequestClose={() => { setAction(null); setRollbackVersionId(null) }} onRequestSubmit={(event) => { event.preventDefault(); void runAction() }}><p className="modal-copy">{action === 'rollback' ? '这会切换 PostgreSQL current、OpenSearch current 和 Fast Router 版本缓存，不会删除 WeKnora 远端文档。请填写操作原因。' : '这会改变当前检索数据。请填写强制发布原因，提交后会留下审计记录。'}</p><TextInput id="action-reason" labelText="操作原因" value={reason} onChange={(event) => setReason(event.target.value)} /></Modal>
+    </section>
+  )
+}
+
+function ProvenancePanel({ target, payload, loading, error, onClose }: { target: { entity: string; recordId: string }; payload: ProvenancePayload | null; loading: boolean; error: string | null; onClose: () => void }) {
+  const mapping = payload?.mapping
+  const status = mapping?.verification?.status ?? (error ? 'unavailable' : undefined)
+  const markdownRange = mapping?.md
+  const fields = Object.entries(mapping?.fields ?? {}) as Array<[string, ProvenanceField]>
+  const mappingId = mapping?.mapping_id ?? target.recordId
+  const statusCopy = status === 'verified' ? '这条记录通过了版本、行号和字段映射检查。' : status === 'review_required' ? '已经找到对应 Markdown，但匹配结果需要人工复核。' : '这条记录暂时没有可用的 Markdown 行级映射，不能把它当作已核验数据。'
+  return <section className="provenance-panel" aria-live="polite">
+    <div className="provenance-heading"><div><p className="eyebrow">SOURCE MAPPING</p><h3>这条 JSONL 来自哪一行 Markdown？</h3><p>{target.entity} · {target.recordId}</p></div><div className="provenance-heading-actions">{status && <Tag type={provenanceStatusKind(status)}>{provenanceStatusLabel(status)}</Tag>}<Button kind="ghost" size="sm" onClick={onClose}>收起</Button></div></div>
+    {loading ? <div className="provenance-loading">正在读取这条记录的来源映射…</div> : error || !payload ? <div className="provenance-unavailable"><strong>暂时无法展示来源映射</strong><span>{error || statusCopy} 老版本运行可能尚未生成 provenance.jsonl。</span></div> : <>
+      <p className="provenance-status-copy">{statusCopy}</p>
+      <div className="provenance-flow"><span>1. Markdown 原文</span><ArrowRight size={16} /><span>2. 固定解析规则</span><ArrowRight size={16} /><span>3. JSONL 检索记录</span></div>
+      <div className="provenance-meta"><span>JSONL 第 <strong>{payload.jsonl.line}</strong> 行</span><span>Markdown 第 <strong>{markdownRange?.line_start}–{markdownRange?.line_end}</strong> 行</span><span>章节：{markdownRange?.section_path || '未标注'}</span><span className="mono">映射 {mappingId}</span></div>
+      <div className="provenance-grid">
+        <section className="provenance-card"><div className="provenance-card-heading"><div><h4>JSONL（检索用）</h4><span>系统实际返回的结构化记录</span></div><Tag type="blue">第 {payload.jsonl.line} 行</Tag></div><pre>{JSON.stringify(payload.jsonl.record, null, 2)}</pre></section>
+        <section className="provenance-card"><div className="provenance-card-heading"><div><h4>Markdown 原文（唯一输入）</h4><span>蓝色行是这条 JSONL 的直接来源</span></div><Tag type="green">第 {markdownRange?.line_start}–{markdownRange?.line_end} 行</Tag></div><div className="provenance-lines">{payload.markdown.items.map((item) => <div key={item.line} className={`provenance-line ${item.highlighted ? 'is-highlighted' : ''}`}><span>{String(item.line).padStart(4, '0')}</span><code>{item.text ?? ''}</code></div>)}</div></section>
+      </div>
+      <section className="provenance-fields"><div><h4>每个字段是怎么来的</h4><p>“直接来自 Markdown”表示原文能找到；“按固定规则推导”表示不是模型猜的，而是解析规则算出的；“系统运行信息”是版本或状态。</p></div>{fields.length ? <div className="provenance-field-list">{fields.map(([name, field]) => <div className="provenance-field-row" key={name}><code>{name}</code><Tag type={field.kind === 'direct' ? 'green' : field.kind === 'derived' ? 'blue' : 'gray'}>{provenanceFieldKindLabel(field.kind)}</Tag><span className={provenanceFieldKindClass(field.kind)}>{field.kind === 'direct' ? `Markdown 第 ${field.line_start ?? markdownRange?.line_start} 行 · ${field.column ?? name}：${displayValue(field.raw_value)}` : field.rule ? `规则：${field.rule}` : `Markdown 第 ${field.line_start ?? markdownRange?.line_start} 行`}</span></div>)}</div> : <p className="subcell">该映射没有记录字段级说明。</p>}</section>
+    </>}
+  </section>
 }
 
 function VersionHistory({ versions, onRollback }: { versions: UniversityVersion[]; onRollback: (versionId: string) => void }) {

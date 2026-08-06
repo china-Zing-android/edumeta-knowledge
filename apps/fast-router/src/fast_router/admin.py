@@ -21,6 +21,7 @@ ARTIFACTS: dict[str, str] = {
     "raw_markdown": "input.md",
     "catalog_entries": "catalog_entries.jsonl",
     "quick_facts": "quick_facts.jsonl",
+    "provenance": "provenance.jsonl",
     "source_registry": "source_registry.jsonl",
     "url_manifest": "url_manifest.jsonl",
     "entity_contexts": "entity_contexts.jsonl",
@@ -865,12 +866,17 @@ class AdminControlPlane:
             raise ValueError("run artifact path escaped ingestion root") from exc
         return path
 
+    def _artifact_path_for_run(self, run: dict[str, Any], artifact: str) -> Path:
+        """Resolve the public artifact name to its immutable run snapshot path."""
+        filename = ARTIFACTS[artifact]
+        run_dir = self._run_dir(run)
+        return run_dir / filename if artifact == "raw_markdown" else run_dir / "normalized" / filename
+
     def artifacts(self, run_id: str) -> dict[str, Any]:
         run = self._run_context(run_id)
-        run_dir = self._run_dir(run)
         items: list[dict[str, Any]] = []
         for artifact, filename in ARTIFACTS.items():
-            path = run_dir / filename
+            path = self._artifact_path_for_run(run, artifact)
             if not path.is_file():
                 items.append({"artifact": artifact, "filename": filename, "available": False})
                 continue
@@ -882,7 +888,7 @@ class AdminControlPlane:
         if artifact not in ARTIFACTS:
             raise ValueError("unknown artifact")
         run = self._run_context(run_id)
-        path = self._run_dir(run) / ARTIFACTS[artifact]
+        path = self._artifact_path_for_run(run, artifact)
         if not path.is_file():
             raise ValueError("artifact not available")
         return path
@@ -907,6 +913,60 @@ class AdminControlPlane:
                         items.append({"line": index + 1, "error": "invalid JSONL line", "text": line.rstrip("\n")})
         return {"artifact": artifact, "offset": offset, "limit": limit, "total": total, "items": items}
 
+    def provenance(self, run_id: str, entity: str, record_id: str) -> dict[str, Any]:
+        if entity not in {"catalog_entries", "quick_facts"}:
+            raise ValueError("provenance is available for catalog_entries and quick_facts only")
+        mapping_path = self.artifact_path(run_id, "provenance")
+        mapping: dict[str, Any] | None = None
+        with mapping_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                candidate = json.loads(line)
+                identity = candidate.get("jsonl") or {}
+                if identity.get("entity") == entity and identity.get("record_id") == record_id:
+                    mapping = candidate
+                    break
+        if mapping is None:
+            raise ValueError("provenance mapping not found")
+
+        jsonl_path = self.artifact_path(run_id, entity)
+        jsonl_line: int | None = None
+        jsonl_record: dict[str, Any] | None = None
+        with jsonl_path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                candidate = json.loads(line)
+                if candidate.get("entry_id") == record_id or candidate.get("fact_id") == record_id:
+                    jsonl_line = line_number
+                    jsonl_record = candidate
+                    break
+        if jsonl_record is None or jsonl_line is None:
+            raise ValueError("JSONL record for provenance mapping not found")
+
+        md_start = int(mapping["md"]["line_start"])
+        md_end = int(mapping["md"]["line_end"])
+        markdown = self.artifact_page(
+            run_id,
+            "raw_markdown",
+            offset=max(0, md_start - 3),
+            limit=max(1, min(20, md_end - md_start + 5)),
+        )
+        markdown["highlighted_range"] = {"line_start": md_start, "line_end": md_end}
+        markdown["items"] = [
+            {
+                **item,
+                "highlighted": md_start <= int(item.get("line", 0)) <= md_end,
+            }
+            for item in markdown["items"]
+        ]
+        return {
+            "mapping": mapping,
+            "jsonl": {"artifact": entity, "line": jsonl_line, "record": jsonl_record},
+            "markdown": markdown,
+        }
+
     def bundle_path(self, run_id: str) -> Path:
         run = self._run_context(run_id)
         run_dir = self._run_dir(run)
@@ -917,9 +977,9 @@ class AdminControlPlane:
         output = output_dir / f"{run_id}.zip"
         with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for artifact, filename in ARTIFACTS.items():
-                path = run_dir / filename
+                path = self._artifact_path_for_run(run, artifact)
                 if path.is_file():
-                    archive.write(path, arcname=filename)
+                    archive.write(path, arcname=filename if artifact == "raw_markdown" else f"normalized/{filename}")
         return output
 
     def _version_items(self, university_id: str, rows: list[tuple[Any, ...]]) -> list[dict[str, Any]]:
